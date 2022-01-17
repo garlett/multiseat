@@ -33,23 +33,19 @@ index 8eb8a470..7d5373f7 100644
  	wet->heads_changed_listener.notify = drm_heads_changed;
  	weston_compositor_add_heads_changed_listener(c,
 diff --git a/include/libweston/backend-drm.h b/include/libweston/backend-drm.h
-index 350eeb0..175da5c 100644
 --- a/include/libweston/backend-drm.h
 +++ b/include/libweston/backend-drm.h
-@@ -221,6 +221,13 @@ struct weston_drm_backend_config {
- 	 */
- 	char *specific_device;
- 
-+ 	/** DRM device file descriptor to use
+@@ -229,3 +229,10 @@ struct weston_drm_backend_config {
++
++        /** DRM device file descriptor to use
 +          *
 +          * An openeded DRM device file descriptor.  If <0, open a DRM
 +          * device in the backend using `specific_device` or heuristics.
 +          */
-+ 	int device_fd;
-+
- 	/** Use shadow buffer if using Pixman-renderer. */
- 	bool use_pixman_shadow;
++	int device_fd;
+ };
  
+ #ifdef  __cplusplus
 diff --git a/libweston/backend-drm/drm.c b/libweston/backend-drm/drm.c
 index e3169b6e..300c9ff6 100644
 --- a/libweston/backend-drm/drm.c

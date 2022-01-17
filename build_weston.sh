@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo run this with a non root user capable of sudo, (wheel group)
+echo "run this with a non root user capable of sudo, (wheel group)"
 
 # weston and drm lease manager builder on archlinux.
 # this is intended for multiseat with one single graphics card,
@@ -12,7 +12,7 @@ cd ~
 
 # sudo pacman -Syu git wget meson ninja
 
-mkdir -p drm-lease-manager
+mkdir -p drm-lease-manager weston
 cd drm-lease-manager
 # git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git"
 # meson build
@@ -21,7 +21,6 @@ cd drm-lease-manager
 cd ..
 
 
-mkdir -p weston
 cd weston
 
 if ! [ -e PKGBUILD ]
@@ -33,10 +32,12 @@ then
 
     echo "md5sums+=('SKIP'{,,,})" >> PKGBUILD
 
-    # sed -e "s/ -D  simples-dmabuf-drm=auto//" PKGBUILD    # unknow bug
+    sed -i 's/-D simple-dmabuf-drm=auto//g' PKGBUILD
+
+    cp ../0001-backend-drm-Add-method-to-import-DRM-fd.patch .
 fi
 
-rm src/weston-*/compositor/drm-lease.{c,h} > /dev/null # patch does not keep track of previus created files
+rm src/weston-*/compositor/drm-lease.{c,h} 2>/dev/null # patch does not keep track of previus created files
 
 makepkg -i -s --skippgpcheck # TODO: insert keys on current user 
 
@@ -45,5 +46,4 @@ makepkg -i -s --skippgpcheck # TODO: insert keys on current user
 # systemctl start drm-lease-manger 
 
 # weston --drm-lease=card0-HDMI-A-1
-
 
