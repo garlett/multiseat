@@ -4,7 +4,11 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution 
 
-# run this with a non root user capable of sudo, (wheel group)
+if [ "$EUID" -eq 0 ]
+  then 
+  echo -e "\e[1;31m[weston builder]\e[0m Please run this with a non root user, that is capable of sudo (problaby in wheel group), because makepkg does not like root."
+  exit
+fi
 
 cd 
 if ! [ -d drm-lease-manager ]
@@ -48,15 +52,18 @@ then
     echo "source+=(\"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/\"{0001-backend-drm-Add-method-to-import-DRM-fd,0001-compositor-do-not-request-repaint-in-output_enable,0002-Add-DRM-lease-support,0004-launcher-direct-handle-seat0-without-VTs}\".patch\")" >> PKGBUILD
     # 0003-launcher-do-not-touch-VT-tty-while-using-non-default,   ### merged on master already
 
-    echo "sistem service scrip " # > /..../drm-lease-manager.  || exit 10
+    sudo echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager.service  || exit 10
 else
+    echo -e "\e[1;31m[weston builder]\e[0m using pacman to remove previus weston installation .... "  
+    sudo pacman -R weston --noconfirm # || exit 11
     echo -e "\e[1;31m[weston builder]\e[0m removing previus weston build .... "  
-    sudo pacman -R weston  || exit 11
-    rm src/weston-*/compositor/drm-lease.{c,h} 2>/dev/null  || exit 12 # patch does not keep track of previus newly created files
+    rm -r src/ pkg/ || exit 12  #  rm src/weston-*/compositor/drm-lease.{c,h} 2>/dev/null  # || exit 12 # patch does not keep track of previus newly created files
 fi
 
 
 echo -e "\e[1;31m[weston builder]\e[0m building weston .... "  
 makepkg -f -i -s --skippgpcheck || exit 13 # TODO: insert keys on current user 
-echo -e "\e[1;31m[weston builder]\e[0m now you need to switch to root ( su ) and run ./start_weston_drm.sh" 
+echo -e "\e[1;31m[weston builder]\e[0m switching back to root, enter password and run ./start_dlm_weston.sh from this user directory"
+su
+
 
