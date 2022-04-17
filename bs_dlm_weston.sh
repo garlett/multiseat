@@ -48,7 +48,10 @@ then
         	     	ln -s /usr/$file $( dirname ${file/local\//} ) || exit 80
 	        fi
 	    done
-	fi
+
+	    echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager.service  || exit 85
+        # TODO: insert dlm cardX parameter	
+        fi
 
 
 	cd /home/userdw || exit 90
@@ -69,7 +72,6 @@ then
 	    # ,0003-launcher-do-not-touch-VT-tty-while-using-non-default,	### merged on master already
 	    # ,0004-launcher-direct-handle-seat0-without-VTs			### merged on master already
 
-	    echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager.service  || exit 130
 	else
 	    echo -e "\e[1;31m[weston builder]\e[0m using pacman to remove previus weston installation .... "
 	    pacman -R weston --noconfirm # || exit 11
@@ -88,10 +90,13 @@ systemctl start drm-lease-manager || exit 170
 sleep 1
 
 echo "" > log_weston.log
-echo -e "\e[1;31m[multiseat]\e[0m starting weston seats ... "
+echo -e "\e[1;31m[multiseat]\e[0m starting weston seat1 ... "
+sleep 1
 SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=seat1 --drm-lease=card0-DVI-I-1 --log=log_weston.log &
+
+echo -e "\e[1;31m[multiseat]\e[0m starting weston seat0 ... "
 sleep 2
-weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log
+weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log # --shell=kiosk-shell.so -c /root/kiosk.ini
 
 cat log_weston.log
 echo -e "\e[1;31m[multiseat]\e[0m stoping drm-lease-manager server service ... "
