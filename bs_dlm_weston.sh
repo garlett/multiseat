@@ -91,11 +91,11 @@ sleep 1
 
 echo "" > log_weston.log
 echo -e "\e[1;31m[multiseat]\e[0m starting weston seat1 ... "
-sleep 1
+sleep 2
 SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=seat1 --drm-lease=card0-DVI-I-1 --log=log_weston.log &
 
 echo -e "\e[1;31m[multiseat]\e[0m starting weston seat0 ... "
-sleep 2
+sleep 5
 weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log # --shell=kiosk-shell.so -c /root/kiosk.ini
 
 cat log_weston.log
