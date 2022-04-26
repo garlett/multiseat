@@ -7,12 +7,22 @@
 # you need to:
 # config lease-names in the end of this script, run drm-lease-manager to get a list
 # edit /usr/lib/udev/rules.d/71-seat.rules and at the `Allow USB hubs` append: , TAG+="master-of-seat"
+# reboot ### udevadm control --reload # not working
 # then attach seat1 devices, like:
 #  loginctl seat-status
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1 
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 # keyboard2
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4 # mouse2
-# reboot ### udevadm control --reload # not working
+
+# current status:
+#  demo weston-... applications works fine
+#  firebird starts normaly, but the second instance goes to the same seat
+#  non root user needs XDG_ vars, /run/user ownership and acess to logind api dbus
+#  kiosk shell not working
+
+#  colud not try to start on kiosk: greetd + greeter
+#  not tried to change systemd tty config to weston seat0 -drm=...
+
 
 if [ "$EUID" -ne 0 ]
   then 
@@ -96,7 +106,7 @@ SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=seat1 --drm-lease=card0-DVI-I-1 -
 
 echo -e "\e[1;31m[multiseat]\e[0m starting weston seat0 ... "
 sleep 5
-weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log # --shell=kiosk-shell.so -c /root/kiosk.ini
+weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log # --shell=kiosk-shell.so -c /root/kiosk.ini & sleep 9 && killall weston
 
 cat log_weston.log
 echo -e "\e[1;31m[multiseat]\e[0m stoping drm-lease-manager server service ... "
