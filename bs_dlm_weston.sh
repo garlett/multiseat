@@ -4,6 +4,8 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
+wait_time=0.5s # time between seat instances start (systemd job)
+
 # you need to:
 # config lease-names in the end of this script, run drm-lease-manager to get a list
 # edit /usr/lib/udev/rules.d/71-seat.rules and at the `Allow USB hubs` append: , TAG+="master-of-seat"
@@ -15,13 +17,8 @@
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4 # mouse2
 
 # current status:
-#  demo weston-... applications works fine
-#  firebird starts normaly, but the second instance goes to the same seat
 #  non root user needs XDG_ vars, /run/user ownership and acess to logind api dbus
-#  kiosk shell not working
 
-#  colud not try to start on kiosk: greetd + greeter
-#  not tried to change systemd tty config to weston seat0 -drm=...
 
 
 if [ "$EUID" -ne 0 ]
@@ -31,7 +28,7 @@ if [ "$EUID" -ne 0 ]
   exit
 fi
 
-if [[ "$1" == "" ]] # run without recompile
+if [[ "$1" == "-c" ]] # chek for compile flag
 then
 	useradd -m userdw
 	cd /home/userdw || exit 10
@@ -39,7 +36,7 @@ then
 	if ! [ -d drm-lease-manager ]
 	then
 	    echo -e "\e[1;31m[weston builder]\e[0m updating system and installing required packages .... "
-	    pacman -Syu git meson ninja wget --noconfirm || exit 20
+	    pacman -Syu git meson ninja wget alacritty --noconfirm || exit 20
 
 	    echo -e "\e[1;31m[weston builder]\e[0m git clone and build drm-lease-mangaer .... "
 	    git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 30
@@ -60,7 +57,7 @@ then
 	    done
 
 	    echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager.service  || exit 85
-        # TODO: insert dlm cardX parameter	
+        # TODO: change to: for card in /dev/dri/card*    and insert $card argumet
         fi
 
 
@@ -92,23 +89,40 @@ then
 	echo -e "\e[1;31m[weston builder]\e[0m downloading and building weston .... "
 	sudo -uuserdw makepkg -f -s --skippgpcheck || exit 150 # TODO: insert keys on user and remove skippgpcheck flag
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 160
+else
+	echo -e "\e[1;31m[weston builder]\e[0m if you want to download, compile and install, type: ./bs_dlm_weston.sh -c"
 fi
 
 
 echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
+rm /var/local/run/drm-lease-manager/card*
 systemctl start drm-lease-manager || exit 170
-sleep 1
-
+sleep $wait_time
+unset DISPLAY
 echo "" > log_weston.log
+
+
+# for drm in /var/local/run/drm-lease-manager/card*!(.lock)
+
 echo -e "\e[1;31m[multiseat]\e[0m starting weston seat1 ... "
-sleep 2
-SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=seat1 --drm-lease=card0-DVI-I-1 --log=log_weston.log &
-
+SEATD_VTBOUND=0 weston --log=log_weston.log --shell=kiosk-shell.so -Bdrm-backend.so --seat=seat1 --drm-lease=card0-DVI-I-1 &
+sleep $wait_time
 echo -e "\e[1;31m[multiseat]\e[0m starting weston seat0 ... "
-sleep 5
-weston -Bdrm-backend.so --drm-lease=card0-VGA-1 --log=log_weston.log # --shell=kiosk-shell.so -c /root/kiosk.ini & sleep 9 && killall weston
+SEATD_VTBOUND=0 weston --log=log_weston.log --shell=kiosk-shell.so -Bdrm-backend.so --seat=seat0 --drm-lease=card0-VGA-1 &
+sleep $wait_time
 
-cat log_weston.log
+
+WAYLAND_DISPLAY=wayland-1 LIBGL_ALWAYS_SOFTWARE=1 alacritty &
+WAYLAND_DISPLAY=wayland-2 LIBGL_ALWAYS_SOFTWARE=1 alacritty
+#WAYLAND_DISPLAY=wayland-1 weston-terminal
+#WAYLAND_DISPLAY=wayland-2 firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
+
+
+killall weston
+#cat log_weston.log
 echo -e "\e[1;31m[multiseat]\e[0m stoping drm-lease-manager server service ... "
 systemctl stop drm-lease-manager
 
+
+
+#sudo -uuserdw XDG_RUNTIME_DIR=/run/user/0 weston
