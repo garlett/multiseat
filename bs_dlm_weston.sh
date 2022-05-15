@@ -4,7 +4,7 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-wait_time=0.9s 			# time between seat instances start (systemd job)
+wait_time=5s			# time between seat instances start (systemd job)
 kiosk=--shell=kiosk-shell.so 	# comment this line to not tun on kiosk mode
 log=--log=log_weston.log	# comment this to not generate log on file
 kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
@@ -95,46 +95,42 @@ else
 fi
 
 
+! [ "$log" == "" ] && echo "begin" > $log
 echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
+systemctl stop drm-lease-manager
 rm /var/local/run/drm-lease-manager/card*
 systemctl start drm-lease-manager || exit 170
 sleep $wait_time
 unset DISPLAY
-#echo "" > log_weston.log
 
 
+shopt -s extglob
 seat_count=0
-for lease in /var/local/run/drm-lease-manager/card*;
+for lease in /var/local/run/drm-lease-manager/card!(*.lock);
 do
-	if ! [[ $lease =~ '.lock' ]]
-	then
-		seat=seat$seat_count
-		lease=$(basename $lease)
-		echo -e "\e[1;31m[multiseat]\e[0m Creating weston $seat on $lease ... "
-		#useradd -m $seat
-		#seat_dir=/run/user/`id -u $seat`
-		#mkdir -p $seat_dir || exit 200
-		#chown userdw:userdw $seat_dir || exit 210
-		#chmod 0700 $seat_dir || exit 220
-		#sudo -uuserdw XDG_RUNTIME_DIR=$seat_dir \
-		SEATD_VTBOUND=0 weston $log $kiosk -Bdrm-backend.so --seat=$seat --drm-lease=$lease &
-		seat_count=$(($seat_count + 1))
-		sleep $wait_time
-	fi
+	seat=seat$seat_count
+	lease=$(basename $lease)
+	echo -e "\e[1;31m[multiseat]\e[0m Creating weston $seat on $lease ... "
+	#useradd -m $seat
+	#seat_dir=/run/user/`id -u $seat`
+	#mkdir -p $seat_dir || exit 200
+	#chown userdw:userdw $seat_dir || exit 210
+	#chmod 0700 $seat_dir || exit 220
+	#sudo -uuserdw XDG_RUNTIME_DIR=$seat_dir \
+	SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
+	seat_count=$(($seat_count + 1))
+	sleep $wait_time 
 done
-
 
 if ! [ "$kiosk" = "" ]
 then
-	for display in /run/user/0/wayland-*; # /run/user/*/wayland-1;
+	for display in /run/user/0/wayland-!(*.lock); # /run/user/*/wayland-1;
 	do
-		if ! [[ $display =~ '.lock' ]]
-		then
-			WAYLAND_DISPLAY=$(basename $display) LIBGL_ALWAYS_SOFTWARE=1 $kiosk_app &
-		fi
+		WAYLAND_DISPLAY=$(basename $display) LIBGL_ALWAYS_SOFTWARE=1 $kiosk_app &
 	done
 fi
+sleep $wait_time
 
-#sleep 1m && killall weston # && cat log_weston.log
-echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
-systemctl stop drm-lease-manager
+# killall weston $kiosk_app # && cat log_weston.log
+#echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
+#systemctl stop drm-lease-manager
