@@ -9,14 +9,14 @@ kiosk=--shell=kiosk-shell.so 	# comment this line to not tun on kiosk mode
 log=--log=log_weston.log	# comment this to not generate log on file
 kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
 
-# after installed, you need to attach seatX (for X>0) devices, like:
+# after installed, you need to attach devices on seatX (for X>0) like:
 #  loginctl seat-status
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1 
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 # keyboard2
 #  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4 # mouse2
 
 # current status:
-#  non root user needs logind api dbus
+#  non-root user needs logind api dbus
 
 
 
@@ -104,20 +104,24 @@ sleep $wait_time
 unset DISPLAY
 
 
-shopt -s extglob
 seat_count=0
+shopt -s extglob
 for lease in /var/local/run/drm-lease-manager/card!(*.lock);
 do
 	seat=seat$seat_count
 	lease=$(basename $lease)
 	echo -e "\e[1;31m[multiseat]\e[0m Creating weston $seat on $lease ... "
-	#useradd -m $seat
-	#seat_dir=/run/user/`id -u $seat`
-	#mkdir -p $seat_dir || exit 200
-	#chown userdw:userdw $seat_dir || exit 210
-	#chmod 0700 $seat_dir || exit 220
-	#sudo -uuserdw XDG_RUNTIME_DIR=$seat_dir \
+	useradd -m $seat
+	seat_dir=/run/user/`id -u $seat`
+	mkdir -p $seat_dir || exit 200
+	chown $seat:$seat $seat_dir || exit 210
+	chmod 0700 $seat_dir || exit 220
+	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
 	SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
+#export XDG_RUNTIME_DIR=$seat_dir
+#openvt -s weston
+#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
+#exit
 	seat_count=$(($seat_count + 1))
 	sleep $wait_time 
 done
@@ -128,9 +132,11 @@ then
 	do
 		WAYLAND_DISPLAY=$(basename $display) LIBGL_ALWAYS_SOFTWARE=1 $kiosk_app &
 	done
+	sleep $wait_time
 fi
-sleep $wait_time
+
 
 # killall weston $kiosk_app # && cat log_weston.log
 #echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
 #systemctl stop drm-lease-manager
+
