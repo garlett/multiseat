@@ -1,12 +1,25 @@
 #!/bin/bash
 
+#systemd-run  --collect -E XDG_SESSION_TYPE=wayland --uid=1004 -p PAMName=login -p TTYPath=/dev/tty2 sleep 1d
+
+#systemctl start mysession # systemd will ask for passowrd
+#loginctl # verify if mysession was able to perform the session login
+
+#systemctl --user start weston
+#exit
+
+#export XDG_RUNTIME_DIR=$seat_dir
+#openvt -s weston
+#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
+
+
 # drm lease manager and weston 10 build and start on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
 wait_time=5s			# time between seat instances start (systemd job)
-kiosk=--shell=kiosk-shell.so 	# comment this line to not tun on kiosk mode
-log=--log=log_weston.log	# comment this to not generate log on file
+kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
+log=log_weston.log		# comment this to not generate log on file
 kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
 
 # after installed, you need to attach devices on seatX (for X>0) like:
@@ -96,6 +109,7 @@ fi
 
 
 ! [ "$log" == "" ] && echo "begin" > $log
+! [ "$log" == "" ] && log=--log=$log
 echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
 systemctl stop drm-lease-manager
 rm /var/local/run/drm-lease-manager/card*
@@ -118,10 +132,6 @@ do
 	chmod 0700 $seat_dir || exit 220
 	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
 	SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
-#export XDG_RUNTIME_DIR=$seat_dir
-#openvt -s weston
-#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
-#exit
 	seat_count=$(($seat_count + 1))
 	sleep $wait_time 
 done
