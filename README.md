@@ -9,14 +9,10 @@ RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working!
 
 Need help to:
 
-Fix it to work with a non-root user;
+1) Make a script that uses logind to create sequential seats for each pair of USB keyboard and mouse;
 
-Create a systemd service to weston;
+2) Update drm-lease-manage.service to manage all cards;
 
-Make a script that uses logind to create sequential seats tor each pair of USB keyboard and mouse;
-
-Update drm-lease-manage.service to manage all cards;
-
-Refer this repo around multi seat tutorial sites. 
+3) Refer this repo around multi seat tutorials sites. 
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/blob/main/IMG_20220417_180350.jpg?raw=true)
