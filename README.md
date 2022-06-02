@@ -11,8 +11,6 @@ Need help to:
 
 1) Make a script that uses logind to create sequential seats for each pair of USB keyboard and mouse;
 
-2) Update drm-lease-manage.service to manage all cards;
-
-3) Refer this repo on multi seat tutorials.
+2) Refer this repo on multi seat tutorials.
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/blob/main/IMG_20220417_180350.jpg?raw=true)
