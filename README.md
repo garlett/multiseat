@@ -13,6 +13,6 @@ Need help to:
 
 2) Update drm-lease-manage.service to manage all cards;
 
-3) Refer this repo around multi seat tutorials sites. 
+3) Refer this repo on multi seat tutorials sites.
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/blob/main/IMG_20220417_180350.jpg?raw=true)
