@@ -8,11 +8,10 @@ wait_time=5s			# time between seat instances start (systemd job)
 #kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
 #log=log_weston.log		# comment this to not generate log on file
 #kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
-seat_devices=(	'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.2 /sys/devices/platform/i8042/serio1/input/input12' #/sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5'
+seat_devices=(	'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5 /sys/devices/platform/i8042/serio1/input/input12'
 		'/sys/devices/pci0000:00/0000:00:1a.0/usb1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4' # master keyboard mouse
 		) # run `loginctl seat-status` to find the devices 
 		# TODO: make a script that auto sets seat_devices # MASTER;  capslock|numlock|scrolllock;  Mouse
-
 
 if [ "$EUID" -ne 0 ]
 	then 
@@ -87,9 +86,10 @@ else
 fi
 
 
+loginctl flush-devices
 sed -i 's/SUBSYSTEM=="usb", ATTR{bDeviceClass}=="09", TAG+="seat$"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 3
-udevadm control --reload || exit 5 
-udevadm trigger || exit 6 # probably not working, reboot may be requeried
+udevadm control --reload || exit 165
+udevadm trigger || exit 166 # probably not working, reboot may be requeried
 
 
 echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
@@ -101,7 +101,6 @@ sleep $wait_time
 unset DISPLAY
 
 
-loginctl flush-devices
 seat_pos=0
 shopt -s extglob
 for lease in /var/local/run/drm-lease-manager/card!(*.lock); # udev job ?
@@ -113,7 +112,7 @@ do
 	useradd -m --badname user_$lease # || exit 190 # user name may not contain uppercase
 	chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 200
 	
-	# echo $log $kiosk > ?/home/user_$lease?/weston.ini
+	# echo $log $kiosk ?drm-lease? > ?/home/user_$lease?/weston.ini
 	systemctl start weston@$lease.service || exit 210
 	sleep $wait_time
 	seat_pos=$(($seat_pos + 1))
@@ -145,4 +144,4 @@ fi
 	#chown $seat:$seat $seat_dir || exit 210
 	#chmod 0700 $seat_dir || exit 220
 	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
-	#SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
+	#SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &/
