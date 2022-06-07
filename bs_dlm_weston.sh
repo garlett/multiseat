@@ -1,36 +1,16 @@
 #!/bin/bash
 
-#systemd-run  --collect -E XDG_SESSION_TYPE=wayland --uid=1004 -p PAMName=login -p TTYPath=/dev/tty2 sleep 1d
-
-#systemctl start mysession # systemd will ask for passowrd
-#loginctl # verify if mysession was able to perform the session login
-
-#systemctl --user start weston
-#exit
-
-#export XDG_RUNTIME_DIR=$seat_dir
-#openvt -s weston
-#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
-
-
 # drm lease manager and weston 10 build and start on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
 wait_time=5s			# time between seat instances start (systemd job)
-kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
-log=log_weston.log		# comment this to not generate log on file
-kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
-
-# after installed, you need to attach devices on seatX (for X>0) like:
-#  loginctl seat-status
-#  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1 
-#  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 # keyboard2
-#  loginctl attach seat1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4 # mouse2
-
-# current status:
-#  non-root user needs logind api dbus
-
+#kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
+#log=log_weston.log		# comment this to not generate log on file
+#kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
+seat_devices=(	'/sys/devices/pci0000:00/0000:00:1a.0/usb1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4' # hub keyboard mouse
+		'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5'
+		) # run `loginctl seat-status` to find the devices # TODO: make a script that auto sets seat_devices
 
 
 if [ "$EUID" -ne 0 ]
@@ -38,6 +18,7 @@ if [ "$EUID" -ne 0 ]
 	echo -e "\e[1;31m[weston builder]\e[0m Please run this as root"
 	exit
 fi
+
 
 if [[ "$1" == "-c" ]] # check for compile flag
 then
@@ -67,11 +48,8 @@ then
 			fi
 		done
 
-		sed -i 's/SUBSYSTEM=="usb", ATTR{bDeviceClass}=="09", TAG+="seat$"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 82
-		udevadm control --reload || exit 84 # probably not working, you may need to reboot 
-
-		# TODO: change to: for card in /dev/dri/card*    and insert $card argumet
-		echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager.service  || exit 86
+		echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager %I\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager@.service  || exit 86
+		echo -e "[Unit]\nDescription=Weston User Seat Service\nAfter=systemd-user-sessions.service\n\n[Service]\nType=simple\nPAMName=login\n\nEnvironment=SEATD_VTBOUND=0\nEnvironment=XDG_SESSION_TYPE=wayland\n\nEnvironment=XDG_SEAT=seat_%i\nUser=user_%i\nGroup=user_%i\nExecStart=/usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i\n\n[Install]\nWantedBy=graphical.target" > /etc/systemd/system/weston@.service || exit 88
 	fi
 
 
@@ -91,7 +69,7 @@ then
 		echo "source+=(\"https://raw.githubusercontent.com/garlett/multiseat/main/\"{0001-backend-drm-Add-method-to-import-DRM-fd,0002-Add-DRM-lease-support}\".patch\")" >> PKGBUILD
 		echo "source+=(\"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/0001-compositor-do-not-request-repaint-in-output_enable.patch\")" >> PKGBUILD
 		# ,0003-launcher-do-not-touch-VT-tty-while-using-non-default,	### merged on master already
-		# ,0004-launcher-direct-handle-seat0-without-VTs			### merged on master already
+		# ,0004-launcher-direct-handle-seat0-without-VTs		### merged on master already
 
 	else
 		echo -e "\e[1;31m[weston builder]\e[0m using pacman to remove previus weston installation .... "
@@ -108,37 +86,42 @@ else
 fi
 
 
-! [ "$log" == "" ] && echo "begin" > $log
-! [ "$log" == "" ] && log=--log=$log
+sed -i 's/SUBSYSTEM=="usb", ATTR{bDeviceClass}=="09", TAG+="seat$"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 3
+udevadm control --reload || exit 5 
+udevadm trigger || exit 6 # probably not working, reboot may be requeried
+
+
+
 echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
-systemctl stop drm-lease-manager
+systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
 rm /var/local/run/drm-lease-manager/card*
-systemctl start drm-lease-manager || exit 170
+systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 170 # udev job ?
 sleep $wait_time
 unset DISPLAY
 
 
-seat_count=0
+loginctl flush-devices
+seat_pos=0
 shopt -s extglob
-for lease in /var/local/run/drm-lease-manager/card!(*.lock);
+for lease in /var/local/run/drm-lease-manager/card!(*.lock); # udev job ?
 do
-	seat=seat$seat_count
 	lease=$(basename $lease)
-	echo -e "\e[1;31m[multiseat]\e[0m Creating weston $seat on $lease ... "
-	useradd -m $seat
-	seat_dir=/run/user/`id -u $seat`
-	mkdir -p $seat_dir || exit 200
-	chown $seat:$seat $seat_dir || exit 210
-	chmod 0700 $seat_dir || exit 220
-	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
-	SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
-	seat_count=$(($seat_count + 1))
-	sleep $wait_time 
+	echo -e "\e[1;31m[multiseat]\e[0m Creating weston seat $lease ... "
+	loginctl attach seat_$lease ${seat_devices[$seat_pos]} || exit 180
+
+	useradd -m user_$lease # || exit 190
+	chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 200
+	
+	# echo $log $kiosk > ?/home/user_$lease?/weston.ini
+	systemctl start weston@$lease.service || exit 210
+	sleep $wait_time
+	seat_pos=$(($seat_pos + 1))
 done
+
 
 if ! [ "$kiosk" = "" ]
 then
-	for display in /run/user/0/wayland-!(*.lock); # /run/user/*/wayland-1;
+	for display in /run/user/*/wayland-1; # /run/user/0/wayland-!(*.lock);
 	do
 		WAYLAND_DISPLAY=$(basename $display) LIBGL_ALWAYS_SOFTWARE=1 $kiosk_app &
 	done
@@ -147,6 +130,23 @@ fi
 
 
 # killall weston $kiosk_app # && cat log_weston.log
-#echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
-#systemctl stop drm-lease-manager
+# echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
+# systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
+
+# systemd-run  --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat1 --uid=1004 -p PAMName=login weston
+# works as root, but can [User=seat0 Group=seat0] be passed as E_argument to not became root
+
+
+# remove:
+#export XDG_RUNTIME_DIR=$seat_dir
+#openvt -s weston
+#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
+	#seat_dir=/run/user/`id -u $seat`
+	#mkdir -p $seat_dir || exit 200
+	#chown $seat:$seat $seat_dir || exit 210
+	#chmod 0700 $seat_dir || exit 220
+	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
+	#SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &
+
+
 
