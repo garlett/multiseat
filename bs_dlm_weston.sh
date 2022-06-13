@@ -8,14 +8,17 @@ wait_time=5s			# time between seat instances start (systemd job)
 #kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
 #log=log_weston.log		# comment this to not generate log on file
 #kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
-seat_devices=(	'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.2 /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.5 /sys/devices/platform/i8042/serio1/input/input12'
-		'/sys/devices/pci0000:00/0000:00:1a.0/usb1 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.3 /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.4' # master keyboard mouse
-		) # run `loginctl seat-status` to find the devices 
-		# TODO: make a script that auto sets seat_devices # MASTER;  capslock|numlock|scrolllock;  Mouse
+#keyboards=()
+#mouses=()
+
+red="\e[1;31m"
+white="\e[0m"
+wb="$red[weston builder]$white"
+ms="$red[multiseat]$white"
 
 if [ "$EUID" -ne 0 ]
 	then 
-	echo -e "\e[1;31m[weston builder]\e[0m Please run this as root"
+	echo -e "$wb Please run this as root"
 	exit
 fi
 
@@ -27,17 +30,17 @@ then
 
 	if ! [ -d drm-lease-manager ]
 	then
-		echo -e "\e[1;31m[weston builder]\e[0m updating system and installing required packages .... "
+		echo -e "$wb Updating system and installing required packages .... "
 		pacman -Syu git meson ninja wget alacritty --noconfirm || exit 20
 
-		echo -e "\e[1;31m[weston builder]\e[0m git clone and build drm-lease-manager .... "
+		echo -e "$wb git clone and build drm-lease-manager .... "
 		git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 30
 		cd drm-lease-manager
 		meson build || exit 40
 		ninja -C build || exit 50
 		ninja -C build install || exit 60
 
-		echo -e "\e[1;31m[weston builder]\e[0m linking dlmclient library .... "
+		echo -e "$wb Linking dlmclient library .... "
 		cd /usr/
 		mkdir -p include/libdlmclient || exit 70
 		for file in local/include/libdlmclient/dlmclient.h local/lib/pkgconfig/libdlmclient.pc local/lib/libdlmclient.so*
@@ -60,7 +63,7 @@ then
 
 	if ! [ -e PKGBUILD ]
 	then
-		echo -e "\e[1;31m[weston builder]\e[0m preparing weston arch package file descriptor .... "
+		echo -e "$wb Preparing weston arch package file descriptor .... "
 
 		wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 120
 
@@ -72,27 +75,32 @@ then
 		# ,0004-launcher-direct-handle-seat0-without-VTs		### merged on master already
 
 	else
-		echo -e "\e[1;31m[weston builder]\e[0m using pacman to remove previus weston installation .... "
+		echo -e "$wb Using pacman to remove previus weston installation .... "
 		pacman -R weston --noconfirm # || exit 11
-		echo -e "\e[1;31m[weston builder]\e[0m removing previus weston build .... "
+		echo -e "$wb Removing previus weston build .... "
 		rm -r src/ pkg/ # || exit 140  #  rm src/weston-*/compositor/drm-lease.{c,h} 2>/dev/null  # || exit 12 # patch does not keep track of previus newly created files
 	fi
 
-	echo -e "\e[1;31m[weston builder]\e[0m downloading and building weston .... "
+	echo -e "$wb Downloading and building weston .... "
 	sudo -uuserdw makepkg -f -s --skippgpcheck || exit 150 # TODO: insert keys on user and remove skippgpcheck flag
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 160
 else
-	echo -e "\e[1;31m[weston builder]\e[0m if you want to download, compile and install, type: ./bs_dlm_weston.sh -c"
+	echo -e "$wb If you want to download, compile and install, type: ./bs_dlm_weston.sh -c"
 fi
 
+# set "master-of-seat" on input devices
+sed -i 's/SUBSYSTEM=="input", KERNEL=="input*", TAG+="seat"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 163
+udevadm control --reload && udevadm trigger || exit 164
 
-loginctl flush-devices
-sed -i 's/SUBSYSTEM=="usb", ATTR{bDeviceClass}=="09", TAG+="seat$"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 3
-udevadm control --reload || exit 165
-udevadm trigger || exit 166 # probably not working, reboot may be requeried
+# keyboards and mouses auto detect
+[ $keyboards == "" && $mouses == "" ] && for dev in /sys/class/input/input*/capabilities/key;
+do
+	[ "$(cat $dev | rev | cut -d ' ' -f 1 | rev)" == "fffffffffffffffe" ] && keyboards+=(${dev/"/capabilities/key"/})
+	[ "$(cat $dev | rev | cut -d ' ' -f 5 | rev)" \> "1" ]                && mouses+=(${dev/"/capabilities/key"/})
+done
 
 
-echo -e "\e[1;31m[multiseat]\e[0m starting drm-lease-manager server service ... "
+echo -e "$ms Starting drm-lease-manager server service ... "
 systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
 sleep $wait_time
 rm /var/local/run/drm-lease-manager/card*
@@ -106,8 +114,8 @@ shopt -s extglob
 for lease in /var/local/run/drm-lease-manager/card!(*.lock); # udev job ?
 do
 	lease=$(basename $lease)
-	echo -e "\e[1;31m[multiseat]\e[0m Creating weston seat $lease ... "
-	loginctl attach seat_$lease ${seat_devices[$seat_pos]} || exit 180
+	echo -e "$ms Creating weston seat $lease ... "
+	loginctl attach seat_$lease ${keyboards[$seat_pos]} ${mouses[$seat_pos]} || exit 180
 
 	useradd -m --badname user_$lease # || exit 190 # user name may not contain uppercase
 	chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 200
@@ -129,11 +137,16 @@ then
 fi
 
 # killall weston $kiosk_app # && cat log_weston.log
-# echo -e "\e[1;31m[multiseat]\e[0m stopping drm-lease-manager server service ... "
+# echo -e "$ms stopping drm-lease-manager server service ... "
 # systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
 
 # systemd-run  --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat1 --uid=1004 -p PAMName=login weston
 # works as root, but can [User=seat0 Group=seat0] be passed as E_argument to not became root
+
+
+
+
+
 
 # remove:
 #export XDG_RUNTIME_DIR=$seat_dir
@@ -145,3 +158,14 @@ fi
 	#chmod 0700 $seat_dir || exit 220
 	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
 	#SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &/
+	
+	# run `loginctl seat-status` to find the devices # https://tldp.org/LDP/Linux-Filesystem-Hierarchy/html/dev.html
+		# TODO: make a script that auto sets seat_devices # MASTER;  capslock|numlock|scrolllock;  Mouse
+		# mouses=`loginctl seat-status | grep -B1 Mouse | grep -o "/sys/.*$"`
+		# keyboards=`loginctl seat-status | grep -B1 Keyboard | grep -o "/sys/.*$"`
+#cat /sys/class/input/input*/capabilities/key
+#seat_devices=(	'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/class/input/input5 /sys/class/input/input12'
+#		'/sys/devices/pci0000:00/0000:00:1a.0/usb1 /sys/class/input/input8 /sys/class/input/input4' # master keyboard mouse
+#		) 
+ # loginctl attach seat_$lease ${seat_devices[$seat_pos]} || exit 180
+ 
