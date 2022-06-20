@@ -4,10 +4,10 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-wait_time=5s			# time between seat instances start (systemd job)
-#kiosk=--shell=kiosk-shell.so 	# comment this line to not turn on kiosk mode
-#log=log_weston.log		# comment this to not generate log on file
-#kiosk_app=alacritty		# weston-terminal  firefox --no-remote --profile /root/.mozilla/firefox/*.p1/ # starts new instance on profile p1, you may need to "cp -r *" from default profile
+# bug: root bash session stays attached to keyboard
+
+wait_time=9s	# time between seat instances start (systemd job)
+#kiosks=("LIBGL_ALWAYS_SOFTWARE=1 alacritty", "firefox" ) # not working yet
 #keyboards=()
 #mouses=()
 
@@ -52,7 +52,7 @@ then
 		done
 
 		echo -e "[Unit]\nDescription=drm-lease-manager\n\n[Service]\nExecStart=/usr/local/bin/drm-lease-manager %I\n\n[Install]\nWantedBy=multi-user.target" > /etc/systemd/system/drm-lease-manager@.service  || exit 86
-		echo -e "[Unit]\nDescription=Weston User Seat Service\nAfter=systemd-user-sessions.service\n\n[Service]\nType=simple\nPAMName=login\n\nEnvironment=SEATD_VTBOUND=0\nEnvironment=XDG_SESSION_TYPE=wayland\n\nEnvironment=XDG_SEAT=seat_%i\nUser=user_%i\nGroup=user_%i\nExecStart=/usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i\n\n[Install]\nWantedBy=graphical.target" > /etc/systemd/system/weston@.service || exit 88
+		echo -e "[Unit]\nDescription=Weston User Seat Service\nAfter=systemd-user-sessions.service\n\n[Service]\nType=simple\nPAMName=login\nEnvironment=SEATD_VTBOUND=0\nEnvironment=XDG_SESSION_TYPE=wayland\n\nEnvironment=XDG_SEAT=seat_%i\nUser=user_%i\nGroup=user_%i\nExecStart=/bin/sh -c \"/usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i ${kiosk}\"\n\n[Install]\nWantedBy=graphical.target" > /etc/systemd/system/weston-seat@.service || exit 88
 	fi
 
 
@@ -85,7 +85,7 @@ then
 	sudo -uuserdw makepkg -f -s --skippgpcheck || exit 150 # TODO: insert keys on user and remove skippgpcheck flag
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 160
 else
-	echo -e "$wb If you want to download, compile and install, type: ./bs_dlm_weston.sh -c"
+	echo -e "$wb If you want to download, compile and install, type: ./bs_dlm_weston.sh -c ... for logs type: journalctl -xe"
 fi
 
 # set "master-of-seat" on input devices
@@ -93,7 +93,7 @@ sed -i 's/SUBSYSTEM=="input", KERNEL=="input*", TAG+="seat"/&, TAG+="master-of-s
 udevadm control --reload && udevadm trigger || exit 164
 
 # keyboards and mouses auto detect
-[ $keyboards == "" && $mouses == "" ] && for dev in /sys/class/input/input*/capabilities/key;
+[[ $keyboards == "" && $mouses == "" ]] && for dev in /sys/class/input/input*/capabilities/key;
 do
 	[ "$(cat $dev | rev | cut -d ' ' -f 1 | rev)" == "fffffffffffffffe" ] && keyboards+=(${dev/"/capabilities/key"/})
 	[ "$(cat $dev | rev | cut -d ' ' -f 5 | rev)" \> "1" ]                && mouses+=(${dev/"/capabilities/key"/})
@@ -101,13 +101,11 @@ done
 
 
 echo -e "$ms Starting drm-lease-manager server service ... "
-systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
-sleep $wait_time
+systemctl stop weston-seat* drm-lease-manager*
 rm /var/local/run/drm-lease-manager/card*
 systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 170 # udev job ?
-sleep $wait_time
+sleep $wait_time # because dlm does not work with --wait, notify, forking and systemd socket, replace with: while ! [ -e /var/local/run/drm-lease-manager/* ] ; do sleep 0.1s done
 unset DISPLAY
-
 
 seat_pos=0
 shopt -s extglob
@@ -117,55 +115,20 @@ do
 	echo -e "$ms Creating weston seat $lease ... "
 	loginctl attach seat_$lease ${keyboards[$seat_pos]} ${mouses[$seat_pos]} || exit 180
 
-	useradd -m --badname user_$lease # || exit 190 # user name may not contain uppercase
+	useradd -m --badname user_$lease 2>/dev/null # || exit 190 # user name may not contain uppercase
 	chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 200
-	
-	# echo $log $kiosk ?drm-lease? > ?/home/user_$lease?/weston.ini
-	systemctl start weston@$lease.service || exit 210
+	mkdir -p /home/user_$lease/.config
+
+#	systemctl set-environment kiosk="--shell=kiosk-shell.so & ( sleep $wait_time ; WAYLAND_DISPLAY=wayland-1 LIBGL_ALWAYS_SOFTWARE=1 alacritty ) &"
+	# if weston supports systemd api, change to kiosk-seat@ .service
+	systemctl start weston-seat@$lease.service || exit 210
+	#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 --uid=1007 -p PAMName=login -p User=user_$lease -p Group=user_$lease weston || exit 210
 	sleep $wait_time
 	seat_pos=$(($seat_pos + 1))
 done
-
-
-if ! [ "$kiosk" = "" ]
-then
-	for display in /run/user/*/wayland-1; # /run/user/0/wayland-!(*.lock);
-	do
-		WAYLAND_DISPLAY=$(basename $display) LIBGL_ALWAYS_SOFTWARE=1 $kiosk_app &
-	done
-	sleep $wait_time
-fi
-
+ 
 # killall weston $kiosk_app # && cat log_weston.log
 # echo -e "$ms stopping drm-lease-manager server service ... "
 # systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
 
-# systemd-run  --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat1 --uid=1004 -p PAMName=login weston
-# works as root, but can [User=seat0 Group=seat0] be passed as E_argument to not became root
 
-
-
-
-
-
-# remove:
-#export XDG_RUNTIME_DIR=$seat_dir
-#openvt -s weston
-#systemd-run --uid=`id -u $seat` -p PAMName=login -p Environment=XDG_SEAT=$seat weston
-	#seat_dir=/run/user/`id -u $seat`
-	#mkdir -p $seat_dir || exit 200
-	#chown $seat:$seat $seat_dir || exit 210
-	#chmod 0700 $seat_dir || exit 220
-	#sudo -u$seat XDG_RUNTIME_DIR=$seat_dir \
-	#SEATD_VTBOUND=0 weston -Bdrm-backend.so --seat=$seat --drm-lease=$lease $log $kiosk &/
-	
-	# run `loginctl seat-status` to find the devices # https://tldp.org/LDP/Linux-Filesystem-Hierarchy/html/dev.html
-		# TODO: make a script that auto sets seat_devices # MASTER;  capslock|numlock|scrolllock;  Mouse
-		# mouses=`loginctl seat-status | grep -B1 Mouse | grep -o "/sys/.*$"`
-		# keyboards=`loginctl seat-status | grep -B1 Keyboard | grep -o "/sys/.*$"`
-#cat /sys/class/input/input*/capabilities/key
-#seat_devices=(	'/sys/devices/pci0000:00/0000:00:1d.0/usb2 /sys/class/input/input5 /sys/class/input/input12'
-#		'/sys/devices/pci0000:00/0000:00:1a.0/usb1 /sys/class/input/input8 /sys/class/input/input4' # master keyboard mouse
-#		) 
- # loginctl attach seat_$lease ${seat_devices[$seat_pos]} || exit 180
- 
