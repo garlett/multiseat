@@ -4,11 +4,12 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-wait_time=9s	# time between seat instances start (systemd job)
-#kiosks=("LIBGL_ALWAYS_SOFTWARE=1 alacritty", "firefox" ) #not working
 keyboards=()
 mouses=()
 leases=()
+
+kiosks=("firefox" "LIBGL_ALWAYS_SOFTWARE=1 alacritty" )
+wait_time=9s	# time between seat instances start (systemd job)
 
 red="\e[1;31m"
 white="\e[0m"
@@ -116,8 +117,8 @@ case "$1" in
 		echo -e "$ms Creating weston seat $lease ... "
 		loginctl attach seat_$lease ${keyboards[$seat_pos]} ${mouses[$seat_pos]} || exit 170
 		useradd -m --badname user_$lease 2>/dev/null # || exit 180 # user name may not contain uppercase
-		seat_pos=$(($seat_pos + 1))
 		loginctl seat-status seat_$lease | cat
+		seat_pos=$(($seat_pos + 1))
 	done
 	#loginctl list-seats
 	echo -e "$ms you may need to run this command multiple times"
@@ -130,7 +131,6 @@ case "$1" in
 	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 190 # udev job ?
 	sleep $wait_time # because dlm does not work with --wait, notify, forking and systemd socket, replace with:
 	#while ! [ -e /var/local/run/drm-lease-manager/* ] ; do sleep 0.1s done
-	unset DISPLAY
 
 	seat_pos=0
 	for lease in ${leases[@]};
@@ -139,7 +139,7 @@ case "$1" in
 		chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 
 		systemctl unset-environment kiosk
-		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( sleep $wait_time ; ${kiosks[$seat_pos]} ) &"
+		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( sleep $wait_time ; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
 		# if weston supports systemd api, change to kiosk-seat@ .service
 
 		systemctl start weston-seat@$lease.service || exit 210
@@ -159,13 +159,8 @@ case "$1" in
 	;;
 esac
 
- 
 # killall weston $kiosk_app # && cat log_weston.log
 # echo -e "$ms stopping drm-lease-manager server service ... "
 # systemctl stop `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*`
 
-
-#	shopt -s extglob
-#/var/local/run/drm-lease-manager/card!(*.lock); # udev job ?
-#		lease=$(basename $lease)
 
