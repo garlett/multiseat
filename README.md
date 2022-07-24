@@ -9,4 +9,4 @@ RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working!
 
 ***Need help on refering this repo on multi seat tutorials.***
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/blob/main/not nested multiseat using single graphics card gpu.jpg?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg)
