@@ -4,11 +4,13 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-keyboards=()
-mouses=()
-leases=()
+# TODO: test last weston version; fix dlm ninja dependencies
 
-kiosks=("firefox" "LIBGL_ALWAYS_SOFTWARE=1 alacritty" )
+keyboards=( )
+mouses=( )
+leases=( )
+
+kiosks=("LIBGL_ALWAYS_SOFTWARE=1 alacritty" "")
 wait_time=9s	# time between seat instances start (systemd job)
 
 red="\e[1;31m"
@@ -116,7 +118,8 @@ case "$1" in
 	do
 		echo -e "$ms Creating weston seat $lease ... "
 		loginctl attach seat_$lease ${keyboards[$seat_pos]} ${mouses[$seat_pos]} || exit 170
-		useradd -m --badname user_$lease 2>/dev/null # || exit 180 # user name may not contain uppercase
+		useradd --badname user_$lease 2>/dev/null # || exit 180 # user name may not contain uppercase
+		mkdir -p /home/user_$lease
 		loginctl seat-status seat_$lease | cat
 		seat_pos=$(($seat_pos + 1))
 	done
@@ -129,7 +132,7 @@ case "$1" in
 	systemctl stop weston-seat* drm-lease-manager*
 	rm /var/local/run/drm-lease-manager/card*
 	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 190 # udev job ?
-	sleep $wait_time # because dlm does not work with --wait, notify, forking and systemd socket, replace with:
+	sleep $wait_time # because dlm did not work with --wait, notify, forking and systemd socket, replace with:
 	#while ! [ -e /var/local/run/drm-lease-manager/* ] ; do sleep 0.1s done
 
 	seat_pos=0
