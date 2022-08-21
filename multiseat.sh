@@ -126,7 +126,7 @@ case "$1" in
 
     "-c") # create config
 	# set "master-of-seat" on input devices
-	sed -i 's/SUBSYSTEM=="input", KERNEL=="input*", TAG+="seat"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 130
+	sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 130
 	udevadm control --reload && udevadm trigger || exit 140
 
 	unset keyboards mouses leases 
