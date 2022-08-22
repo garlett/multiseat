@@ -4,9 +4,9 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-keyboards=('/sys/class/input/input4' )
-mouses=('/sys/class/input/input3' )
-leases=('card0-VGA-1' )
+keyboards=('/sys/class/input/input5' '/sys/class/input/input2' )
+mouses=(' ' '/sys/class/input/input4' )
+leases=('card0-VGA-1' 'card0-DVI-I-1' )
 
 kiosks=("LIBGL_ALWAYS_SOFTWARE=1 alacritty" "")
 wait_time=9s	# time between seat instances start (systemd job)
@@ -22,8 +22,8 @@ site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
 	"" \
 )
 
-patch=(	"'${site[1]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
-	"'${site[1]}0002-Add-DRM-lease-support.patch'" \
+patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
+	"'${site[0]}0002-Add-DRM-lease-support.patch'" \
 	"'${site[1]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
 #	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged on master already
 #	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged on master already
@@ -35,7 +35,7 @@ if [ "$EUID" -ne 0 ]
 	exit
 fi
 
-
+			
 case "$1" in 
     "-b") # build
 	if ! [ -d $ms_dir ]
@@ -43,9 +43,10 @@ case "$1" in
 		echo -e "$wb creating systemctl services .... "
 		cat <<- EOF > /etc/systemd/system/drm-lease-manager@.service
 			[Unit]
-			Description=drm-lease-manager
+			Description=Drm Lease Manager
 		
 			[Service]
+			#Type=forking notify Group=video UMask=0007
 			ExecStart=/usr/local/bin/drm-lease-manager %I
 
 			[Install]
@@ -58,6 +59,7 @@ case "$1" in
 
 			[Service]
 			Type=simple
+			#Type=notify
 			PAMName=login
 			Environment=SEATD_VTBOUND=0
 			Environment=XDG_SESSION_TYPE=wayland
@@ -67,21 +69,22 @@ case "$1" in
 			ExecStart=/bin/sh -c "/usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i ${kiosk}"
 
 			[Install]
-			WantedBy=graphical.target"
+			WantedBy=graphical.target
 			EOF
+		systemctl daemon-reload
 
 		echo -e "$wb soft linking library files from /usr/local/... to /usr/... "
 		cd /usr/
 		mkdir -p include/libdlmclient local/lib/pkgconfig 
-		for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so,libtoml.so}
+		for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so.0,libtoml.so}
 		do
 			! [ -e $file ] && ( ln -s /usr/local/$file $( dirname $file ) || exit 30 )
 		done
 		
 		echo -e "$wb installing required packages .... "
-		pacman -Sy --noconfirm git make meson ninja wget alacritty gcc cmake pkgconfig libdrm  \
-			sudo fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl libgles \
-			pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch || exit 40
+		pacman -Sy --noconfirm git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo fakeroot wayland \
+			libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl libgles pango lcms2 \ 
+			mtdev libva colord pipewire wayland-protocols freerdp patch || exit 40
 
 		mkdir -p $ms_dir/weston
 		cd $ms_dir || exit 45
@@ -115,7 +118,7 @@ case "$1" in
 	ninja -C build install || exit 100
 
 	cd $ms_dir/weston
-	echo -e "$wb Using pacman to remove previus weston installation .... "
+	echo -e "$wb Using pacman to remove previus weston installations .... "
 	pacman -R weston --noconfirm
 	echo -e "$wb Removing previus weston build .... "
 	rm -r src/ pkg/
@@ -126,7 +129,8 @@ case "$1" in
 
     "-c") # create config
 	# set "master-of-seat" on input devices
-	sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"/&, TAG+="master-of-seat"/' /usr/lib/udev/rules.d/71-seat.rules || exit 130
+	sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"/&, TAG+="master-of-seat"/' \
+		/usr/lib/udev/rules.d/71-seat.rules || exit 130
 	udevadm control --reload && udevadm trigger || exit 140
 
 	unset keyboards mouses leases 
@@ -140,35 +144,43 @@ case "$1" in
 	do
 		sleases+="'$lease' "
 	done
-	
+
+	# save found devices paths on this file header
 	sed -i "s/keyboards=(.*)$/keyboards=($(sed -e 's/[&\\/]/\\&/g; s/$/\\/' -e '$s/\\$//' <<<"$skeyboards"))/" $0 || exit 163
 	sed -i "s/mouses=(.*)$/mouses=($(sed -e 's/[&\\/]/\\&/g; s/$/\\/' -e '$s/\\$//' <<<"$smouses"))/" $0 || exit 164
 	sed -i "s/leases=(.*)$/leases=($(sed -e 's/[&\\/]/\\&/g; s/$/\\/' -e '$s/\\$//' <<<"$sleases"))/" $0 || exit 165
 	#vi $0
+	echo "$ms done, you can review on $0, an then enable with '-e'"
 	;;
 	
     "-e") # enable config
 	seat_pos=0
 	for lease in ${leases[@]};
 	do
-		echo -e "$ms Creating weston seat $lease ... "
+		echo -e "$ms Creating weston seat $lease with ${keyboards[$seat_pos]} and ${mouses[$seat_pos]} ... "
 		loginctl attach seat_$lease ${keyboards[$seat_pos]} ${mouses[$seat_pos]} || exit 170
+		seat_pos=$(($seat_pos + 1))
 		useradd --badname user_$lease 2>/dev/null # || exit 180 # user name may not contain uppercase
 		mkdir -p /home/user_$lease
 		loginctl seat-status seat_$lease | cat
-		seat_pos=$(($seat_pos + 1))
 	done
 	#loginctl list-seats
+	echo -e "$ms you may need to run this command multiple times"
+	;;
+
+    "-f") # disable config
+	loginctl flush-devices
+	loginctl list-seats
 	echo -e "$ms you may need to run this command multiple times"
 	;;
 
     "-s") # start services
 	echo -e "$ms Starting drm-lease-manager server service ... "
 	systemctl stop weston-seat* drm-lease-manager*
-	rm /var/local/run/drm-lease-manager/card*
+	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 180 # udev job ?
-	sleep $wait_time # re-test if dlm works with --wait, notify, forking and systemd socket, ELSE replace with:
-	#while ! [ -e /var/local/run/drm-lease-manager/* ] ; do sleep 0.1s done
+	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep 0.1s; done
+
 
 	seat_pos=0
 	for lease in ${leases[@]};
@@ -177,22 +189,21 @@ case "$1" in
 		chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 
 		systemctl unset-environment kiosk
-		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk= \
-			"--shell=kiosk-shell.so & ( sleep $wait_time ; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
-		# if weston supports systemd api, change to kiosk-seat@ .service
+		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( while ! [ -e \$XDG_RUNTIME_DIR/wayland-1 ] ; do sleep 0.1s; done; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
 
 		systemctl start weston-seat@$lease.service || exit 210
-		sleep $wait_time # check if weston supports systemd api
+		while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep 0.1s; done;
 		seat_pos=$(($seat_pos + 1))
 	done
-
+	
+#	sleep $wait_time
 	s=$(loginctl | grep root)
 	loginctl kill-session ${s:0:7}
 	;;
 
     #"-r") # run 
-		#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 --uid=1007 -p PAMName=login \ 
-		#		-p User=user_$lease -p Group=user_$lease weston || exit 210
+		#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 \ 
+		#   --uid=1007 -p PAMName=login -p User=user_$lease -p Group=user_$lease weston || exit 210
 
     *)
 	cat <<- EOF
@@ -202,10 +213,10 @@ case "$1" in
 		 -c Create Config
 		 -e Enable Config
 		 -s Start Services
+		 -f Disable Config
 
 		 last error: echo \$?
 		 logs: journalctl -xe
-		 undo seats config: loginctl flush-devices
 		EOF
 	;;
 esac
