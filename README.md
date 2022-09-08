@@ -1,7 +1,13 @@
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.
 
-it is starting the instances of weston as drm client, each one with its own seat. 
+what it does:
+- download and install pacman packages
+- download, patch and compiles tomcl, drm-lease-manger and weston
+- creates configuration for: keyboards, mouses and videos
+- apply kmv config on the seats
+- start weston service for each seat with non-root user
+
 
 tested with: two monitors on a nvdia 6200, two mouses and two keyboards.
 
