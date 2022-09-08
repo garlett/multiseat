@@ -4,30 +4,24 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-keyboards=('/sys/class/input/input5' '/sys/class/input/input2' )
-mouses=(' ' '/sys/class/input/input4' )
-leases=('card0-VGA-1' 'card0-DVI-I-1' )
+leases=('card0-DVI-I-1' 'card0-VGA-1' )
+keyboards=('/sys/class/input/input2' '/sys/class/input/input6' )
+mouses=('/sys/class/input/input4' '/sys/class/input/input5' )
+#kiosks=('' 'LIBGL_ALWAYS_SOFTWARE=1 alacritty ') #-e ~/login.sh')
 
-kiosks=("LIBGL_ALWAYS_SOFTWARE=1 alacritty" "")
-wait_time=9s	# time between seat instances start (systemd job)
-ms_dir="/home/multiseat"
-
-red="\e[1;31m"
-white="\e[0m"
-wb="$red[Weston Builder]$white"
-ms="$red[MultiSeat]$white"
 
 site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
 	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/" \ 
 	"" \
 )
-
 patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
 	"'${site[0]}0002-Add-DRM-lease-support.patch'" \
 	"'${site[1]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
 #	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged on master already
 #	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged on master already
 )
+ms_dir="/home/multiseat"
+
 
 if [ "$EUID" -ne 0 ]
 	then 
@@ -35,6 +29,11 @@ if [ "$EUID" -ne 0 ]
 	exit
 fi
 
+wait_time=0.1s	# pipe time between exist checks (systemd job)
+red="\e[1;31m"
+white="\e[0m"
+wb="$red[Weston Builder]$white"
+ms="$red[MultiSeat]$white"
 			
 case "$1" in 
     "-b") # build
@@ -71,6 +70,16 @@ case "$1" in
 			[Install]
 			WantedBy=graphical.target
 			EOF
+		cat <<- EOF > /etc/systemd/system/multiseat.service
+			[Unit]
+			Description=MultiSeat Starter
+		
+			[Service]
+			ExecStart=/root/multiseat.sh -s
+
+			#[Install]
+			#WantedBy=multi-user.target
+			EOF
 		systemctl daemon-reload
 
 		echo -e "$wb soft linking library files from /usr/local/... to /usr/... "
@@ -93,7 +102,7 @@ case "$1" in
 		git clone "http://github.com/cktan/tomlc99.git"
 		mv tomlc99/libtoml.pc.sample tomlc99/libtoml.pc
 
-		echo -e "$wb git clone and build drm-lease-manager .... "
+		echo -e "$wb git clone drm-lease-manager .... "
 		git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 50
 
 		echo -e "$wb preparing weston arch package file descriptor .... "
@@ -138,6 +147,7 @@ case "$1" in
 	do
 		[ "$(cat $dev | rev | cut -d ' ' -f 1 | rev)" == "fffffffffffffffe" ] && skeyboards+="'${dev/'/capabilities/key'/}' "
 		[ "$(cat $dev | rev | cut -d ' ' -f 5 | rev)" \> "1" ]                && smouses+="'${dev/'/capabilities/key'/}' "
+		# TODO .... saudio+="'${dev/'/capabilities/key'/}' "
 	done
 	
 	for lease in $(loginctl seat-status | grep drm:card[0-9]- | grep -o card.*);
@@ -150,7 +160,7 @@ case "$1" in
 	sed -i "s/mouses=(.*)$/mouses=($(sed -e 's/[&\\/]/\\&/g; s/$/\\/' -e '$s/\\$//' <<<"$smouses"))/" $0 || exit 164
 	sed -i "s/leases=(.*)$/leases=($(sed -e 's/[&\\/]/\\&/g; s/$/\\/' -e '$s/\\$//' <<<"$sleases"))/" $0 || exit 165
 	#vi $0
-	echo "$ms done, you can review on $0, an then enable with '-e'"
+	echo -e "$ms done, you need to review it inside $0, and then enable with '-e'"
 	;;
 	
     "-e") # enable config
@@ -162,6 +172,7 @@ case "$1" in
 		seat_pos=$(($seat_pos + 1))
 		useradd --badname user_$lease 2>/dev/null # || exit 180 # user name may not contain uppercase
 		mkdir -p /home/user_$lease
+		chown user_$lease:user_$lease /home/user_$lease || exit 175
 		loginctl seat-status seat_$lease | cat
 	done
 	#loginctl list-seats
@@ -179,7 +190,7 @@ case "$1" in
 	systemctl stop weston-seat* drm-lease-manager*
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 180 # udev job ?
-	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep 0.1s; done
+	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep $wait_time; done
 
 
 	seat_pos=0
@@ -189,16 +200,17 @@ case "$1" in
 		chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 
 		systemctl unset-environment kiosk
-		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( while ! [ -e \$XDG_RUNTIME_DIR/wayland-1 ] ; do sleep 0.1s; done; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
+		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( while ! [ -e \$XDG_RUNTIME_DIR/wayland-1 ] ; do sleep $wait_time; done; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
 
 		systemctl start weston-seat@$lease.service || exit 210
 		while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep 0.1s; done;
 		seat_pos=$(($seat_pos + 1))
 	done
 	
-#	sleep $wait_time
-	s=$(loginctl | grep root)
-	loginctl kill-session ${s:0:7}
+	sleep $wait_time
+	O=$(loginctl | grep root)
+	loginctl kill-session ${O:0:7}
+# TODO: disable sysrq, ctrl+alt+{del,1-12}
 	;;
 
     #"-r") # run 
