@@ -7,7 +7,7 @@
 leases=('card0-DVI-I-1' 'card0-VGA-1' )
 keyboards=('/sys/class/input/input2' '/sys/class/input/input6' )
 mouses=('/sys/class/input/input4' '/sys/class/input/input5' )
-#kiosks=('' 'LIBGL_ALWAYS_SOFTWARE=1 alacritty ') #-e ~/login.sh')
+kiosks=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty ') #-e /home/login.sh' '')
 
 
 site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
@@ -29,7 +29,7 @@ if [ "$EUID" -ne 0 ]
 	exit
 fi
 
-wait_time=0.1s	# pipe time between exist checks (systemd job)
+wait_time=0.1s	# time between exist checks (systemd job)
 red="\e[1;31m"
 white="\e[0m"
 wb="$red[Weston Builder]$white"
@@ -65,7 +65,7 @@ case "$1" in
 			Environment=XDG_SEAT=seat_%i
 			User=user_%i
 			Group=user_%i
-			ExecStart=/bin/sh -c "/usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i ${kiosk}"
+			ExecStart=/bin/sh -c "${kiosk} /usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i $k"
 
 			[Install]
 			WantedBy=graphical.target
@@ -75,7 +75,8 @@ case "$1" in
 			Description=MultiSeat Starter
 		
 			[Service]
-			ExecStart=/root/multiseat.sh -s
+			ExecStart=$0 -s
+			ExecStop=$0 -q
 
 			#[Install]
 			#WantedBy=multi-user.target
@@ -100,7 +101,7 @@ case "$1" in
 
 		echo -e "$wb git clone tomlc99 library .... "
 		git clone "http://github.com/cktan/tomlc99.git"
-		mv tomlc99/libtoml.pc.sample tomlc99/libtoml.pc
+		mv tomlc99/libtoml.pc{.sample,}
 
 		echo -e "$wb git clone drm-lease-manager .... "
 		git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 50
@@ -185,6 +186,27 @@ case "$1" in
 	echo -e "$ms you may need to run this command multiple times"
 	;;
 
+    "-r") # restart seats [with arg $2 == lease]
+	seat_pos=0
+	for lease in ${leases[@]};
+	do
+		if [[ "$2" == ""  ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$seat_pos" ]]
+		then
+			echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
+			chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
+
+			systemctl set-environment kiosk=" $( [[ ${kiosks[$seat_pos]} == "" ]] && echo "" || echo \
+				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
+				"WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) & k='--shell=kiosk-shell.so'; " )" # exec
+
+			systemctl restart weston-seat@$lease.service || exit 210
+			while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep $wait_time; done;
+		fi
+		seat_pos=$(($seat_pos + 1))
+	done
+
+	;;
+
     "-s") # start services
 	echo -e "$ms Starting drm-lease-manager server service ... "
 	systemctl stop weston-seat* drm-lease-manager*
@@ -192,40 +214,36 @@ case "$1" in
 	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 180 # udev job ?
 	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep $wait_time; done
 
-
-	seat_pos=0
-	for lease in ${leases[@]};
-	do
-		echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
-		chown user_$lease:user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
-
-		systemctl unset-environment kiosk
-		[[ ${kiosks[$seat_pos]} != "" ]] && systemctl set-environment kiosk="--shell=kiosk-shell.so & ( while ! [ -e \$XDG_RUNTIME_DIR/wayland-1 ] ; do sleep $wait_time; done; WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) &"
-
-		systemctl start weston-seat@$lease.service || exit 210
-		while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep 0.1s; done;
-		seat_pos=$(($seat_pos + 1))
-	done
+	. $0 -r # start seats
 	
 	sleep $wait_time
 	O=$(loginctl | grep root)
 	loginctl kill-session ${O:0:7}
-# TODO: disable sysrq, ctrl+alt+{del,1-12}
+	# TODO: disable background agetty until next reboot
 	;;
 
-    #"-r") # run 
+    #"-x") # execute 
 		#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 \ 
 		#   --uid=1007 -p PAMName=login -p User=user_$lease -p Group=user_$lease weston || exit 210
+
+    "-q") # quit services
+	systemctl stop weston-seat* drm-lease-manager*
+	# reenable agetty
+	chvt 2
+	chvt 1
+	;;
 
     *)
 	cat <<- EOF
 		$ms github.com/garlett/multiseat
 
-		 -b Build
-		 -c Create Config
-		 -e Enable Config
-		 -s Start Services
-		 -f Disable Config
+		 -b 		Build
+		 -c 		Create config
+		 -e 		Enable config
+		 -r LEASE  	Restart weston seat service with LEASE name or pos
+		 -s 		Start drm-lease-manager and weston services
+		 -q 		Quit multiseat
+		 -f 		Disable config
 
 		 last error: echo \$?
 		 logs: journalctl -xe
