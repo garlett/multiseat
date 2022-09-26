@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# drm lease manager and weston 10 build and start on archlinux.
+# tomcl, drm lease manager and weston 10.0.2 builder on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
@@ -94,34 +94,33 @@ case "$1" in
 
     "-g") # git clones
 	echo -e "$wb installing required packages .... "
-	pacman -Sy --noconfirm git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo fakeroot wayland \
-		libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl libgles pango lcms2 \
-		mtdev libva colord pipewire wayland-protocols freerdp patch || exit 40
+	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
+		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
+		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch || exit 40
 
 	mkdir -p $ms_dir/weston
 	cd $ms_dir || exit 45
 
 	echo -e "$wb git clone tomlc99 library .... "
-	git clone "http://github.com/cktan/tomlc99.git"
+	git clone "http://github.com/cktan/tomlc99.git" || exit 48
 	mv tomlc99/libtoml.pc{.sample,}
 
 	echo -e "$wb git clone drm-lease-manager .... "
 	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 50
 
 	echo -e "$wb preparing weston arch package file descriptor .... "
-	useradd ${ms_dir##*/}
-	chown ${ms_dir##*/}:${ms_dir##*/} weston/ || exit 50
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
 	sed -i "s/-D simple-dmabuf-drm=auto//g;s/'SKIP')/'SKIP'{,,,})/g" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
+	cd ..
+	useradd ${ms_dir##*/}
+	chown -R ${ms_dir##*/} weston/ || exit 57
 	;;
 
 
     "-b") # build
-	! [ -d $ms_dir ] && \
-		. $0 -l && \
-		. $0 -g # links and git clones 
+	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
 
 	echo -e "$wb building tomlc parser .... "
 	cd $ms_dir/tomlc99/
@@ -142,6 +141,7 @@ case "$1" in
 	echo -e "$wb Downloading and building weston .... "
 	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: insert keys on user and remove skippgpcheck flag
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
+	echo -e "$wb Building complete !!!"
 	;;
 
 
@@ -199,7 +199,7 @@ case "$1" in
 
     "-d") # dlm service
 	echo -e "$ms Starting drm-lease-manager server service ... "
-	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 210 # udev job ?
+	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 180 # udev job ?
 	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep $wait_time; done
 	;;
 
@@ -217,7 +217,8 @@ case "$1" in
 				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
 				"WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) & k='--shell=kiosk-shell.so'; " )" # exec
 
-			systemctl restart weston-seat@$lease.service || exit 200
+			systemctl restart weston-seat@$lease.service || \
+				( systemctl status weston-seat@$lease.service -l --no-pager && exit 200 )
 			while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep $wait_time; done;
 		fi
 		seat_pos=$(($seat_pos + 1))
@@ -227,12 +228,12 @@ case "$1" in
 
 
     "-s") # start services
-	. $0 -q # stop services
+	. $0 -q --no-tty # stop services
 	. $0 -d # start dlm-lease-manager services
 	. $0 -r # start weston seats services
 	
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
-	# TODO: disable background agetty until next reboot
+	systemctl stop getty*
 	;;
 
 
@@ -244,10 +245,15 @@ case "$1" in
     "-q") # quit services
 	systemctl stop weston-seat* drm-lease-manager*
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
-	# reenable agetty
-	sleep $wait_time
-	chvt 2
-#	chvt 1
+	if [[ "$2" != "--no-tty" ]] 
+	then
+		sleep 1s #$wait_time
+		systemctl start getty@tty1
+		chvt 2
+		sleep 1s #$wait_time
+		chvt 1
+		reset # this section is not restoring VT1 yet
+	fi
 	;;
 
 
