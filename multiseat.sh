@@ -4,21 +4,31 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
+unset inputs leases usbdvs
 # config start
+inputs[3]+='/sys/class/input/input11 ' # PIXART USB OPTICAL MOUSE
+inputs[3]+='/sys/class/input/input12 ' # HID 04f30103#
+inputs[0]+='/sys/class/input/input16 ' # ImPS/2 Generic Wheel Mouse
+inputs[0]+='/sys/class/input/input2 ' # AT Translated Set 2 keyboard#
+inputs[2]+='/sys/class/input/input4 ' # Logitech USB Keyboard#
+inputs[1]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
+inputs[1]+='/sys/class/input/input8 ' #   USB Keyboard#
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
-#leases[2]='card1-DVI-I-2'
+leases[2]='card1-DVI-I-2'
 #leases[3]='card1-TV-1'
-#leases[4]='card1-VGA-2'
-inputs[0]+='/sys/class/input/input2 ' # AT Translated Set 2 keyboard
-inputs[0]+='/sys/class/input/input4 ' # USB Mouse
-inputs[1]+='/sys/class/input/input5 ' # PIXART USB OPTICAL MOUSE
-inputs[1]+='/sys/class/input/input6 ' #   USB Keyboard
-usbdvs[0]+='2-1.1 ' # USB Hub 2.0 - ALCOR
-usbdvs[0]+='2-1.2 ' # C270 HD WEBCAM - 
+leases[3]='card1-VGA-2'
+usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
+usbdvs[1]+='1-1.2 ' # USB Hub 2.0 - ALCOR
+usbdvs[2]+='1-1.2.1 ' # USB SmartCard Reader - Gemalto
+usbdvs[3]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
+usbdvs[0]+='1-1.2.4 ' #  - 
+usbdvs[1]+='2-1.5 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
+usbdvs[2]+='2-1.6 ' # C270 HD WEBCAM - 
 # config end
 
-kiosks=('LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh' '')
+k=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
+kiosks=("${k[0]}" "${k[0]}" "${k[2]}" "${k[0]}" )
 
 ms_dir="/home/multiseat"
 
@@ -59,8 +69,7 @@ function set_usb_owner() {
 	port=$( basename $( get_usb_path_port $1 ) 2> /dev/null )
 	[[ $port == *.* ]] && for lease in ${leases[@]};
 	do
-		[[ "${usbdvs[$i]}" == *$port* ]] && chown user_$lease $1 && return 0
-		i+=$(( $i + 1 ))
+		[[ "${usbdvs[$((i++))]}" == *$port* ]] && chown user_$lease $1 && return 0
 	done
 }
 
@@ -69,9 +78,11 @@ case "$1" in
 	
     "-l") # create services and links
 	echo -e "$wb creating systemctl services ...."
+	ms_path=$( cd $( dirname $0 ) && pwd )/$( basename $0 )
 	cat <<- EOF > /etc/systemd/system/drm-lease-manager@.service
 		[Unit]
 		Description=Drm Lease Manager
+		After=systemd-user-sessions.service
 
 		[Service]
 		#Type=forking notify Group=video UMask=0007
@@ -102,13 +113,27 @@ case "$1" in
 	cat <<- EOF > /etc/systemd/system/multiseat.service
 		[Unit]
 		Description=MultiSeat Starter
+		After=systemd-user-sessions.service
+		Conflicts=getty@tty1.service
 
 		[Service]
-		ExecStart=$0 -s
-		ExecStop=$0 -q
+		ExecStart=$ms_path -s
+		ExecStop=$ms_path -q
+		RemainAfterExit=yes
 
-		#[Install]
-		#WantedBy=multi-user.target
+		[Install]
+		WantedBy=multi-user.target
+		EOF
+	cat <<- EOF > /etc/systemd/system/usbowner.service
+		[Unit]
+		Description=Usb Owner Monitor
+
+		[Service]
+		ExecStart=$ms_path -u
+		RemainAfterExit=yes
+
+		[Install]
+		WantedBy=multi-user.target
 		EOF
 	systemctl daemon-reload
 
@@ -126,7 +151,7 @@ case "$1" in
 	echo -e "$wb installing required packages ...."
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
-		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch || exit 40
+		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch inotify-tools || exit 40
 
 	mkdir -p $ms_dir/weston
 	cd $ms_dir || exit 45
@@ -141,7 +166,7 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
-	sed -i "s/-D simple-dmabuf-drm=auto//g;s/'SKIP')/'SKIP'{,,,})/g" PKGBUILD
+	sed -i "s/\(pkgver=\).*$/\110.0.2/ ; s/\(sums=(\).*$/\1/ ; s/'SKIP'/&{,,,,}/g" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
 	cd ..
 	useradd ${ms_dir##*/}
@@ -176,13 +201,6 @@ case "$1" in
 
 
     "-c") # create config
-	lease_pos=0
-	for lease in $(loginctl seat-status | grep drm:card[0-9]- | grep -o card.*);
-	do
-		config+="leases[$lease_pos]='$lease'\n"
-		lease_pos=$(( $lease_pos + 1 )) 
-	done
-	
 	keybd_pos=0
 	mouse_pos=0
 	for dev in /sys/class/input/input*/capabilities/key;
@@ -190,13 +208,18 @@ case "$1" in
 		key_cap=( $(cat $dev | rev) )
 		dev=${dev/'/capabilities/key'/}	
 
-		[[ ${key_cap[0]} == efffffffffffffff ]] && config+="inputs[$keybd_pos]+='$dev ' # $(cat $dev/name)\n" && \
-			keybd_pos=$(( $keybd_pos + 1 ))
-		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] && config+="inputs[$mouse_pos]+='$dev ' # $(cat $dev/name)\n" && \
-			mouse_pos=$(( $mouse_pos + 1 ))
+		[[ ${key_cap[0]} == efffffffffffffff ]] && config+="inputs[$((keybd_pos++))]+='$dev ' ## $(cat $dev/name)\n"
+		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] && config+="inputs[$((mouse_pos++))]+='$dev ' #@ $(cat $dev/name)\n"
 		# TODO ? audio
 	done
+	[ $keybd_pos -lt $mouse_pos ] && keybd_pos=$mouse_pos
 
+	lease_pos=0
+	for lease in $(loginctl seat-status | grep drm:card[0-9]- | grep -o card.*);
+	do
+		config+="$( [ $lease_pos -ge $keybd_pos ] && echo "#" )leases[$((lease_pos++))]='$lease'\n"
+	done
+	
 	usb_pos=0 
 	for dev in /dev/bus/usb/*/*;
        	do 
@@ -204,12 +227,20 @@ case "$1" in
 		port=$( basename $path_port 2> /dev/null )
 		name="$( cat $path_port/product 2> /dev/null ) - $( cat $path_port/manufacturer 2> /dev/null )"
 		[[ $port == *.* ]] && ! [[ ${name,,} =~ .*(mouse|keyboard).* ]] && \
-			config+="usbdvs[$usb_pos]+='$port ' # $name\n" && usb_pos=$(( $usb_pos + 1 )) 
+			config+="usbdvs[$((usb_pos++))]+='$port ' # $name\n"
+		[ $usb_pos -ge $keybd_pos ] && usb_pos=0
 	done
 
-	sed -zi "s:\(# config start\n\).*\(# config end\n\):\1$config\2:" $0 # save config on this file header
-	#vi $0
-	echo -e "$ms done, you need to review it inside $0, and then enable with '-e' before reboot"
+	# review and save config on this file header
+	echo -e "$config" > /tmp/ms_config.sh
+	for editor in gedit kate nvim vim vi nano
+	do
+		$editor /tmp/ms_config.sh && break
+	done
+	config=$( cat /tmp/ms_config.sh | tr -cd "[:alnum:][]+='#/.\n -" )
+	sed -zi "s:\(# config start\n\).*\(# config end\n\):\1${config//$'\n'/\\n}\n\2:" $0
+
+	$0 -e # enable config
 	;;
 	
 
@@ -219,26 +250,30 @@ case "$1" in
 		/usr/lib/udev/rules.d/71-seat.rules || exit 140
 	udevadm control --reload && udevadm trigger || exit 150
 
+	$0 -f # disable previus config
 	seat_pos=0
 	for lease in ${leases[@]};
 	do
-		echo -e "$ms Creating weston seat $lease with ${inputs[$seat_pos]} ... "
-		loginctl attach seat_$lease ${inputs[$seat_pos]} || exit 160
-		seat_pos=$(($seat_pos + 1))
+		echo -e "$ms Creating seat $seat_pos '$lease' with: $( cat ${inputs[$seat_pos]//' '/'/name '} | tr '\n' ' ' )"
 		useradd --badname user_$lease 2>/dev/null # || exit 170 # user name may not contain uppercase
 		mkdir -p /home/user_$lease
-		chown user_$lease /home/user_$lease || exit 175
-		loginctl seat-status seat_$lease | cat
+		chown user_$lease /home/user_$lease || exit 160
+		
+		while ! loginctl --no-pager seat-status seat_$lease 2> /dev/null
+		do
+			loginctl attach seat_$lease ${inputs[seat_pos]}
+		done
+		seat_pos=$(( seat_pos + 1 ))
 	done
-	#loginctl list-seats
-	echo -e "$ms you may need to run this command multiple times"
 	;;
 
 
     "-f") # disable config
-	loginctl flush-devices
-	loginctl list-seats
-	echo -e "$ms you may need to run this command multiple times"
+	echo -e "$ms Flushing seats ...."
+	while [ $( loginctl list-seats | wc -l ) -gt 4 ]
+	do
+		loginctl flush-devices
+	done
 	;;
 
 
@@ -258,6 +293,7 @@ case "$1" in
 			echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
 			chown user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 
+			systemctl set-environment usbdvs="$usbdvs"
 			systemctl set-environment kiosk=" $( [[ ${kiosks[$seat_pos]} == "" ]] && echo "" || echo \
 				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
 				"WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) & k='--shell=kiosk-shell.so'; " )" # exec
@@ -273,10 +309,10 @@ case "$1" in
 
 
     "-s") # start services
-	. $0 -Q # stop services
+	. $0 -Q # quit services
 	. $0 -d # start dlm-lease-manager services
 	. $0 -r # start weston seats services
-	
+
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
 	systemctl stop getty*
 	;;
@@ -295,7 +331,7 @@ case "$1" in
 	inotifywait /dev/bus/usb -mre create | while read dir action file;
 	do
 		set_usb_owner $dir$file
-	done
+	done &
 	;;
 
 
@@ -304,14 +340,14 @@ case "$1" in
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	if [[ "$1" == "-q" ]]
 	then
-		sleep 1s #$wait_time
-		systemctl start getty@tty1
+#		sleep 1s #$wait_time
+#		systemctl start getty@tty2
 		chvt 2
-		sleep 1s #$wait_time
-		chvt 1
-		reset # this section is not restoring VT1 yet
-		sleep 9s
-	fi
+#		sleep 1s #$wait_time
+#		chvt 1
+#		reset
+#		sleep 9s
+	fi # this section kind of works only on shutdown, "alt+Fn" is required on quit
 	;;
 
 
@@ -324,8 +360,7 @@ case "$1" in
 	echo -e	"$ms github.com/garlett/multiseat"
 	cat <<- EOF
 		 -b 		[Download, link and] build
-		 -c 		Create config
-		 -e 		Enable config
+		 -c 		Create, review and enable config
 		 -s 		Start drm-lease-manager and weston services
 		 -q 		Quit multiseat
 
@@ -334,6 +369,7 @@ case "$1" in
 		 -u		Start usb owner monitor
 		 -g		Git clone repositories
 		 -l		Create library links
+		 -e 		Enable config
 		 -f 		Disable config
 		 -j 		Journal logs
 
@@ -341,8 +377,3 @@ case "$1" in
 		EOF
 	;;
 esac
-
-
-
-
-
