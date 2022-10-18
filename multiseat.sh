@@ -6,25 +6,19 @@
 
 unset inputs leases usbdvs
 # config start
-inputs[3]+='/sys/class/input/input11 ' # PIXART USB OPTICAL MOUSE
-inputs[3]+='/sys/class/input/input12 ' # HID 04f30103#
-inputs[0]+='/sys/class/input/input16 ' # ImPS/2 Generic Wheel Mouse
-inputs[0]+='/sys/class/input/input2 ' # AT Translated Set 2 keyboard#
-inputs[2]+='/sys/class/input/input4 ' # Logitech USB Keyboard#
-inputs[1]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
-inputs[1]+='/sys/class/input/input8 ' #   USB Keyboard#
+inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
+inputs[1]+='/sys/class/input/input4 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
+inputs[1]+='/sys/class/input/input5 ' ##   USB Keyboard
+inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
-leases[2]='card1-DVI-I-2'
+#leases[2]='card1-DVI-I-2'
 #leases[3]='card1-TV-1'
-leases[3]='card1-VGA-2'
+#leases[4]='card1-VGA-2'
 usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
-usbdvs[1]+='1-1.2 ' # USB Hub 2.0 - ALCOR
-usbdvs[2]+='1-1.2.1 ' # USB SmartCard Reader - Gemalto
-usbdvs[3]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
-usbdvs[0]+='1-1.2.4 ' #  - 
-usbdvs[1]+='2-1.5 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
-usbdvs[2]+='2-1.6 ' # C270 HD WEBCAM - 
+usbdvs[1]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
+usbdvs[0]+='2-1.5 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
+usbdvs[1]+='2-1.6 ' # C270 HD WEBCAM - 
 # config end
 
 k=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
@@ -166,7 +160,9 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
-	sed -i "s/\(pkgver=\).*$/\110.0.2/ ; s/\(sums=(\).*$/\1/ ; s/'SKIP'/&{,,,,}/g" PKGBUILD
+	sed_pkg="s/'SKIP'/&{,,,,}/g"
+#	sed_pkg+=" ; s/\(pkgver=\).*$/\1 10.0.2/ ; s/\(sums=(\).*$/\1/"
+	sed -i "$sed_pkg" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
 	cd ..
 	useradd ${ms_dir##*/}
@@ -201,6 +197,7 @@ case "$1" in
 
 
     "-c") # create config
+	echo -e "$ms Creating simple config ...."
 	keybd_pos=0
 	mouse_pos=0
 	for dev in /sys/class/input/input*/capabilities/key;
@@ -293,7 +290,7 @@ case "$1" in
 			echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
 			chown user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 
-			systemctl set-environment usbdvs="$usbdvs"
+			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
 			systemctl set-environment kiosk=" $( [[ ${kiosks[$seat_pos]} == "" ]] && echo "" || echo \
 				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
 				"WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) & k='--shell=kiosk-shell.so'; " )" # exec
