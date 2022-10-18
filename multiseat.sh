@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# tomlc, drm lease manager and weston 10.0.2 builder on archlinux.
+# tomlc, drm lease manager and weston 11.0.0 builder on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
 unset inputs leases usbdvs
 # config start
 inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
-inputs[1]+='/sys/class/input/input4 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
-inputs[1]+='/sys/class/input/input5 ' ##   USB Keyboard
+inputs[1]+='/sys/class/input/input38 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
+inputs[1]+='/sys/class/input/input39 ' ##   USB Keyboard
 inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
@@ -31,7 +31,7 @@ site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
 )
 patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
 	"'${site[0]}0002-Add-DRM-lease-support.patch'" \
-	"'${site[1]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
+	"'${site[0]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
 #	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged on master already
 #	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged on master already
 )
@@ -160,8 +160,7 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
-	sed_pkg="s/'SKIP'/&{,,,,}/g"
-#	sed_pkg+=" ; s/\(pkgver=\).*$/\1 10.0.2/ ; s/\(sums=(\).*$/\1/"
+	sed_pkg="s/'SKIP'/&{,,,}/g" # sed_pkg+=" ; s/\(pkgver=\).*$/\1 10.0.2/ ; s/\(sums=(\).*$/\1'SKIP'/"
 	sed -i "$sed_pkg" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
 	cd ..

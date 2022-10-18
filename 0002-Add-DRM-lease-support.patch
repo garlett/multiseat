@@ -147,7 +147,7 @@ index 7d5373f7..dae754aa 100644
  		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
  		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
  #endif
-@@ -2626,6 +2631,7 @@ load_drm_backend(struct weston_compositor *c,
+@@ -2891,6 +2895,7 @@ load_drm_backend(struct weston_compositor *c,
  	struct weston_config_section *section;
  	struct wet_compositor *wet = to_wet_compositor(c);
  	int ret = 0;
@@ -155,7 +155,7 @@ index 7d5373f7..dae754aa 100644
  
  	wet->drm_use_current_mode = false;
  
-@@ -2637,6 +2643,7 @@ load_drm_backend(struct weston_compositor *c,
+@@ -2900,6 +2885,7 @@ load_drm_backend(struct weston_compositor *c,
  		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
  		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
  		{ WESTON_OPTION_STRING, "drm-device", 0, &config.specific_device },
@@ -163,7 +163,7 @@ index 7d5373f7..dae754aa 100644
  		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
  		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
  	};
-@@ -2658,7 +2665,7 @@ load_drm_backend(struct weston_compositor *c,
+@@ -2958,7 +2965,7 @@ load_drm_backend(struct weston_compositor *c,
  	config.base.struct_version = WESTON_DRM_BACKEND_CONFIG_VERSION;
  	config.base.struct_size = sizeof(struct weston_drm_backend_config);
  	config.configure_device = configure_input_device;
@@ -172,7 +172,7 @@ index 7d5373f7..dae754aa 100644
  
  	wet->heads_changed_listener.notify = drm_heads_changed;
  	weston_compositor_add_heads_changed_listener(c,
-@@ -2676,6 +2683,7 @@ load_drm_backend(struct weston_compositor *c,
+@@ -2976,6 +2983,7 @@ load_drm_backend(struct weston_compositor *c,
  	free(config.gbm_format);
  	free(config.seat_id);
 	free(config.specific_device);
@@ -180,7 +180,7 @@ index 7d5373f7..dae754aa 100644
  
  	return ret;
  }
-@@ -3578,6 +3581,7 @@ out:
+@@ -3878,6 +3881,7 @@ out:
  
  	/* free(NULL) is valid, and it won't be NULL if it's used */
  	free(wet.parsed_options);
