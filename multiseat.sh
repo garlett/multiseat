@@ -7,9 +7,9 @@
 unset inputs leases usbdvs
 # config start
 inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
-inputs[1]+='/sys/class/input/input38 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
-inputs[1]+='/sys/class/input/input39 ' ##   USB Keyboard
-inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
+inputs[1]+='/sys/class/input/input4 ' ##   USB Keyboard
+inputs[0]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
+inputs[1]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
 #leases[2]='card1-DVI-I-2'
@@ -17,8 +17,7 @@ leases[1]='card0-VGA-1'
 #leases[4]='card1-VGA-2'
 usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
 usbdvs[1]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
-usbdvs[0]+='2-1.5 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
-usbdvs[1]+='2-1.6 ' # C270 HD WEBCAM - 
+usbdvs[0]+='2-1.6 ' # C270 HD WEBCAM - 
 # config end
 
 k=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
@@ -112,7 +111,7 @@ case "$1" in
 
 		[Service]
 		ExecStart=$ms_path -s
-		ExecStop=$ms_path -q
+		ExecStopPost=$ms_path -q
 		RemainAfterExit=yes
 
 		[Install]
@@ -195,7 +194,7 @@ case "$1" in
 	;;
 
 
-    "-c") # create config
+    "-c" | "-C" ) # create config
 	echo -e "$ms Creating simple config ...."
 	keybd_pos=0
 	mouse_pos=0
@@ -236,7 +235,7 @@ case "$1" in
 	config=$( cat /tmp/ms_config.sh | tr -cd "[:alnum:][]+='#/.\n -" )
 	sed -zi "s:\(# config start\n\).*\(# config end\n\):\1${config//$'\n'/\\n}\n\2:" $0
 
-	$0 -e # enable config
+	[[ "$1" == "-c" ]] && $0 -e # enable config
 	;;
 	
 
@@ -247,19 +246,22 @@ case "$1" in
 	udevadm control --reload && udevadm trigger || exit 150
 
 	$0 -f # disable previus config
-	seat_pos=0
+	seat_pos=-1
 	for lease in ${leases[@]};
 	do
-		echo -e "$ms Creating seat $seat_pos '$lease' with: $( cat ${inputs[$seat_pos]//' '/'/name '} | tr '\n' ' ' )"
+		seat_pos=$((seat_pos + 1))
+		name=$( cat ${inputs[$seat_pos]//' '/'/name '} | tr '\n' ' ' )
+		echo -e "$ms Creating seat $seat_pos '$lease' with: $name"
+		[[ "$name" == "" ]] && echo -e "$ms fail: inputs could not be found." && continue
+
 		useradd --badname user_$lease 2>/dev/null # || exit 170 # user name may not contain uppercase
 		mkdir -p /home/user_$lease
 		chown user_$lease /home/user_$lease || exit 160
 		
 		while ! loginctl --no-pager seat-status seat_$lease 2> /dev/null
 		do
-			loginctl attach seat_$lease ${inputs[seat_pos]}
+			loginctl attach seat_$lease ${inputs[$seat_pos]}
 		done
-		seat_pos=$(( seat_pos + 1 ))
 	done
 	;;
 
@@ -281,6 +283,7 @@ case "$1" in
 
 
     "-r") # restart seats [with arg $2 == lease]
+	loginctl attach seat0 /sys/devices/pci*/*/*/drm/card*
 	seat_pos=0
 	for lease in ${leases[@]};
 	do
@@ -288,7 +291,11 @@ case "$1" in
 		then
 			echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
 			chown user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
-
+			
+			# allocate the drm only to keep the seat active in case of all inputs disconnects
+			( sleep $((($seat_pos+1)*9))s ; loginctl attach seat_$lease /sys/devices/pci*/*/*/drm/card*/$lease ) & 
+			job+="$! "
+			
 			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
 			systemctl set-environment kiosk=" $( [[ ${kiosks[$seat_pos]} == "" ]] && echo "" || echo \
 				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
@@ -296,11 +303,13 @@ case "$1" in
 
 			systemctl restart weston-seat@$lease.service || \
 				( systemctl status weston-seat@$lease.service -l --no-pager && exit 200 )
+
 			while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep $wait_time; done;
 		fi
 		seat_pos=$(($seat_pos + 1))
 	done
 	sleep $wait_time
+	wait $job
 	;;
 
 
@@ -311,12 +320,27 @@ case "$1" in
 
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
 	systemctl stop getty*
+	deallocvt
 	;;
 
 
     #"-x") # execute 
 		#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 \ 
 		#   --uid=1007 -p PAMName=login -p User=user_$lease -p Group=user_$lease weston || exit 210
+
+
+    "-q" | "-Q") # quit services
+	systemctl stop weston-seat* drm-lease-manager*
+	rm /var/local/run/drm-lease-manager/* >& /dev/null
+	
+	if [[ "$1" == "-q" ]]
+	then
+		systemctl start getty@tty1.service
+		chvt 2
+		chvt 1
+		deallocvt
+	fi
+	;;
 
 
     "-u") # start usb owner monitor
@@ -331,22 +355,6 @@ case "$1" in
 	;;
 
 
-    "-q" | "-Q") # quit services
-	systemctl stop weston-seat* drm-lease-manager*
-	rm /var/local/run/drm-lease-manager/* >& /dev/null
-	if [[ "$1" == "-q" ]]
-	then
-#		sleep 1s #$wait_time
-#		systemctl start getty@tty2
-		chvt 2
-#		sleep 1s #$wait_time
-#		chvt 1
-#		reset
-#		sleep 9s
-	fi # this section kind of works only on shutdown, "alt+Fn" is required on quit
-	;;
-
-
     "-j") # journal logs 
 	journalctl -xeu weston-seat* -u drm-lease-manager*
 	;;
@@ -355,11 +363,11 @@ case "$1" in
     *) # -a auto
 	echo -e	"$ms github.com/garlett/multiseat"
 	cat <<- EOF
-		 -b 		[Download, link and] build
+		 -b 		[Git clone, link and] build
 		 -c 		Create, review and enable config
 		 -s 		Start drm-lease-manager and weston services
-		 -q 		Quit multiseat
 
+		 -q 		Quit multiseat
 		 -r [LEASE]  	Restart weston seat service [with LEASE name or pos]
 		 -d		Start drm-lease-manager
 		 -u		Start usb owner monitor
