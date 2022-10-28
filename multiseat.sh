@@ -6,10 +6,10 @@
 
 unset inputs leases usbdvs
 # config start
+inputs[1]+='/sys/class/input/input18 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
 inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
 inputs[1]+='/sys/class/input/input4 ' ##   USB Keyboard
-inputs[0]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
-inputs[1]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
+inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
 #leases[2]='card1-DVI-I-2'
@@ -17,11 +17,13 @@ leases[1]='card0-VGA-1'
 #leases[4]='card1-VGA-2'
 usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
 usbdvs[1]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
-usbdvs[0]+='2-1.6 ' # C270 HD WEBCAM - 
+usbdvs[0]+='2-1.3 ' # C270 HD WEBCAM - 
+usbdvs[1]+='2-1.4 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
+usbdvs[0]+='2-1.6 ' # DCP-T820DW - Brother
 # config end
 
 k=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
-kiosks=("${k[0]}" "${k[0]}" "${k[2]}" "${k[0]}" )
+kiosks=("${k[1]}" "${k[0]}" "${k[2]}" "${k[0]}" )
 
 ms_dir="/home/multiseat"
 
@@ -94,11 +96,11 @@ case "$1" in
 		#Type=notify
 		PAMName=login
 		Environment=SEATD_VTBOUND=0
+		Environment=WAYLAND_DISPLAY=wayland-1
 		Environment=XDG_SESSION_TYPE=wayland
 		Environment=XDG_SEAT=seat_%i
 		User=user_%i
-		#Group=user_%i
-		ExecStart=/bin/sh -c "${kiosk} /usr/bin/weston -Bdrm-backend.so --seat=seat_%i --drm-lease=%i $k"
+		ExecStart=/bin/sh -c "( while ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
 
 		[Install]
 		WantedBy=graphical.target
@@ -159,12 +161,12 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
-	sed_pkg="s/'SKIP'/&{,,,}/g" # sed_pkg+=" ; s/\(pkgver=\).*$/\1 10.0.2/ ; s/\(sums=(\).*$/\1'SKIP'/"
+	sed_pkg="s/'SKIP'/&{,,,}/g" 
+	sed_pkg+=" ; s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/"
 	sed -i "$sed_pkg" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
 	cd ..
 	useradd ${ms_dir##*/}
-	chown -R ${ms_dir##*/} weston/ || exit 57
 	;;
 
 
@@ -188,6 +190,7 @@ case "$1" in
 	echo -e "$wb Removing previus weston build ...."
 	rm -r src/ pkg/
 	echo -e "$wb Downloading and building weston ...."
+	chown -R ${ms_dir##*/} ../weston/ || exit 105
 	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: insert keys on user and remove skippgpcheck flag
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
 	echo -e "$wb Building complete !!!"
@@ -293,14 +296,11 @@ case "$1" in
 			chown user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
 			
 			# allocate the drm only to keep the seat active in case of all inputs disconnects
-			( sleep $((($seat_pos+1)*9))s ; loginctl attach seat_$lease /sys/devices/pci*/*/*/drm/card*/$lease ) & 
-			job+="$! "
+			( sleep $((($seat_pos+1)*9))s ; loginctl attach seat_$lease \
+				/sys/devices/pci*/*/*/drm/card*/$lease ) & job+="$! "
 			
 			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
-			systemctl set-environment kiosk=" $( [[ ${kiosks[$seat_pos]} == "" ]] && echo "" || echo \
-				"( while ! [ -e \${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep $wait_time; done;" \
-				"WAYLAND_DISPLAY=wayland-1 ${kiosks[$seat_pos]} ) & k='--shell=kiosk-shell.so'; " )" # exec
-
+			systemctl set-environment kiosk="${kiosks[$seat_pos]}"
 			systemctl restart weston-seat@$lease.service || \
 				( systemctl status weston-seat@$lease.service -l --no-pager && exit 200 )
 
@@ -333,13 +333,14 @@ case "$1" in
 	systemctl stop weston-seat* drm-lease-manager*
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	
-	if [[ "$1" == "-q" ]]
+	if [[ "$1" == "-q" ]] # looks better with service
 	then
 		systemctl start getty@tty1.service
+		sleep 1s
 		chvt 2
 		chvt 1
 		deallocvt
-	fi
+	fi 
 	;;
 
 
@@ -377,6 +378,9 @@ case "$1" in
 		 -f 		Disable config
 		 -j 		Journal logs
 
+		 after system upgrades, its recommended to run -b then -c
+		 before download again run:  rm -R $ms_dir
+		 kiosk app will fail: without connected drm output, or with weston >= 10.0.94
 		 last error: echo \$?
 		EOF
 	;;
