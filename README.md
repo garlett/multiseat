@@ -7,7 +7,7 @@ what it does:
 - creates configuration for: keyboards, mouses and videos
 - apply kmv config on the seats
 - start weston service for each seat with non-root user
-- start weston kiosk mode and the application (works on 10.0.2 but not on 11.0.0)
+- start weston kiosk mode and the application (needs weston <= 10.0.93)
 
 tested with: two monitors on a nvdia 6200, two mouses and two keyboards.
 
