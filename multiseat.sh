@@ -16,14 +16,13 @@ leases[1]='card0-VGA-1'
 #leases[3]='card1-TV-1'
 #leases[4]='card1-VGA-2'
 usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
-usbdvs[1]+='1-1.1.4 ' # USB SmartCard Reader - Gemplus
-usbdvs[0]+='2-1.3 ' # C270 HD WEBCAM - 
-usbdvs[1]+='2-1.4 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
-usbdvs[0]+='2-1.6 ' # DCP-T820DW - Brother
+usbdvs[1]+='2-1.3 ' # C270 HD WEBCAM - 
+usbdvs[0]+='2-1.4 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
+usbdvs[1]+='2-1.6 ' # DCP-T820DW - Brother
 # config end
 
-k=('' 'firefox' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
-kiosks=("${k[2]}" "${k[0]}" "${k[3]}" "${k[0]}" )
+k=('' 'exec firefox' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
+kiosks=("${k[3]}" "${k[0]}" "${k[3]}" "${k[0]}" )
 
 ms_dir="/home/multiseat"
 
@@ -127,18 +126,19 @@ case "$1" in
 		Environment=XDG_SEAT=seat_%i
 		User=user_%i
 		
-		Type=simple
-		ExecStart=/bin/sh -c "( while ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
-		
 		#Type=notify
 		#ExecStart=/bin/sh -c "/usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so --modules=systemd-notify.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
+		
+		# use the following if you want parent set to weston
+		Type=simple
+		ExecStart=/bin/sh -c "( while ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
 		EOF
 
 	cat <<- 'EOF' > /etc/systemd/system/multiseat-kiosk@.service
 		[Unit]
 		Description=Multiseat Application Launcher
-		After=multiseat-weston@%i
-		Requires=multiseat-weston@%i
+		After=multiseat-weston@%i.service
+		BindsTo=multiseat-weston@%i.service
 
 		[Service]
 		PAMName=login
@@ -147,7 +147,8 @@ case "$1" in
 		Environment=XDG_SESSION_TYPE=wayland
 		Environment=XDG_SEAT=seat_%i
 		User=user_%i
-		ExecStart=${kiosk}
+		ExecStart=/bin/sh -c "${kiosk}"
+		Restart=always
 		EOF
 
 	systemctl daemon-reload
@@ -248,7 +249,7 @@ case "$1" in
 
 	# review and save config on this file header
 	echo -e "$config" > /tmp/ms_config.sh
-	for editor in gedit kate nvim vim vi nano
+	for editor in gedit kate nano nvim vim vi
 	do
 		$editor /tmp/ms_config.sh && break
 	done
@@ -318,6 +319,7 @@ case "$1" in
 			
 			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
 			systemctl set-environment kiosk="${kiosks[$seat_pos]}"
+#			systemctl stop multiseat-weston@$lease.service
 #			systemctl restart multiseat-kiosk@$lease.service || \
 			systemctl restart multiseat-weston@$lease.service || \
 				( systemctl status multiseat-weston@$lease.service -l --no-pager && exit 200 )
