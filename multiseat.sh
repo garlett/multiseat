@@ -6,9 +6,9 @@
 
 unset inputs leases usbdvs
 # config start
-inputs[1]+='/sys/class/input/input18 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
 inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
 inputs[1]+='/sys/class/input/input4 ' ##   USB Keyboard
+inputs[1]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
 inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
 leases[0]='card0-DVI-I-1'
 leases[1]='card0-VGA-1'
@@ -22,8 +22,8 @@ usbdvs[1]+='2-1.4 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Com
 usbdvs[0]+='2-1.6 ' # DCP-T820DW - Brother
 # config end
 
-k=('' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
-kiosks=("${k[1]}" "${k[0]}" "${k[2]}" "${k[0]}" )
+k=('' 'firefox' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
+kiosks=("${k[2]}" "${k[0]}" "${k[3]}" "${k[0]}" )
 
 ms_dir="/home/multiseat"
 
@@ -36,6 +36,9 @@ patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
 #	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged on master already
 #	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged on master already
 )
+sed_pkg_weston_ver="s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/" # set weston ver = 10.0.93
+
+
 
 
 if [ "$EUID" -ne 0 ]
@@ -74,37 +77,18 @@ case "$1" in
     "-l") # create services and links
 	echo -e "$wb creating systemctl services ...."
 	ms_path=$( cd $( dirname $0 ) && pwd )/$( basename $0 )
-	cat <<- EOF > /etc/systemd/system/drm-lease-manager@.service
+	cat <<- EOF > /etc/systemd/system/multiseat-usbowner.service
 		[Unit]
-		Description=Drm Lease Manager
-		After=systemd-user-sessions.service
+		Description=Multiseat Usb Owner Agent
 
 		[Service]
-		#Type=forking notify Group=video UMask=0007
-		ExecStart=/usr/local/bin/drm-lease-manager %I
+		ExecStart=$ms_path -u
+		RemainAfterExit=yes
 
 		[Install]
 		WantedBy=multi-user.target
 		EOF
-	cat <<- 'EOF' > /etc/systemd/system/weston-seat@.service
-		[Unit]
-		Description=Weston User Seat Service
-		After=systemd-user-sessions.service
 
-		[Service]
-		Type=simple
-		#Type=notify
-		PAMName=login
-		Environment=SEATD_VTBOUND=0
-		Environment=WAYLAND_DISPLAY=wayland-1
-		Environment=XDG_SESSION_TYPE=wayland
-		Environment=XDG_SEAT=seat_%i
-		User=user_%i
-		ExecStart=/bin/sh -c "( while ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
-
-		[Install]
-		WantedBy=graphical.target
-		EOF
 	cat <<- EOF > /etc/systemd/system/multiseat.service
 		[Unit]
 		Description=MultiSeat Starter
@@ -119,17 +103,53 @@ case "$1" in
 		[Install]
 		WantedBy=multi-user.target
 		EOF
-	cat <<- EOF > /etc/systemd/system/usbowner.service
+
+	cat <<- EOF > /etc/systemd/system/multiseat-dlm@.service
 		[Unit]
-		Description=Usb Owner Monitor
+		Description=Drm Lease Manager
+		After=systemd-user-sessions.service
 
 		[Service]
-		ExecStart=$ms_path -u
-		RemainAfterExit=yes
-
-		[Install]
-		WantedBy=multi-user.target
+		#Type=forking notify Group=video UMask=0007
+		ExecStart=/usr/local/bin/drm-lease-manager %I
 		EOF
+
+	cat <<- 'EOF' > /etc/systemd/system/multiseat-weston@.service
+		[Unit]
+		Description=Multiseat Weston Launcher
+		After=systemd-user-sessions.service
+
+		[Service]
+		PAMName=login
+		Environment=SEATD_VTBOUND=0
+		Environment=WAYLAND_DISPLAY=wayland-1
+		Environment=XDG_SESSION_TYPE=wayland
+		Environment=XDG_SEAT=seat_%i
+		User=user_%i
+		
+		Type=simple
+		ExecStart=/bin/sh -c "( while ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
+		
+		#Type=notify
+		#ExecStart=/bin/sh -c "/usr/bin/weston --seat=seat_%i --drm-lease=%i -Bdrm-backend.so --modules=systemd-notify.so $( [ -z "${kiosk:0:9}" ] || echo '--shell=kiosk-shell.so' )"
+		EOF
+
+	cat <<- 'EOF' > /etc/systemd/system/multiseat-kiosk@.service
+		[Unit]
+		Description=Multiseat Application Launcher
+		After=multiseat-weston@%i
+		Requires=multiseat-weston@%i
+
+		[Service]
+		PAMName=login
+		Environment=SEATD_VTBOUND=0
+		Environment=WAYLAND_DISPLAY=wayland-1
+		Environment=XDG_SESSION_TYPE=wayland
+		Environment=XDG_SEAT=seat_%i
+		User=user_%i
+		ExecStart=${kiosk}
+		EOF
+
 	systemctl daemon-reload
 
 	echo -e "$wb soft linking library files from /usr/local/... to /usr/..."
@@ -148,6 +168,7 @@ case "$1" in
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch inotify-tools || exit 40
 
+	useradd ${ms_dir##*/}
 	mkdir -p $ms_dir/weston
 	cd $ms_dir || exit 45
 
@@ -161,12 +182,8 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget https://raw.githubusercontent.com/archlinux/svntogit-community/packages/weston/trunk/PKGBUILD || exit 55
-	sed_pkg="s/'SKIP'/&{,,,}/g" 
-	sed_pkg+=" ; s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/"
-	sed -i "$sed_pkg" PKGBUILD
+	sed -i "s/'SKIP'/&{,,,}/g ; $sed_pkg_weston_ver" PKGBUILD
 	echo "source+=( ${patch[@]} )" >> PKGBUILD
-	cd ..
-	useradd ${ms_dir##*/}
 	;;
 
 
@@ -280,7 +297,7 @@ case "$1" in
 
     "-d") # dlm service
 	echo -e "$ms Starting drm-lease-manager server service ... "
-	systemctl start `systemd-escape --template=drm-lease-manager@.service /dev/dri/card*` || exit 180 # udev job ?
+	systemctl start `systemd-escape --template=multiseat-dlm@.service /dev/dri/card*` || exit 180 # udev job ?
 	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep $wait_time; done
 	;;
 
@@ -301,8 +318,9 @@ case "$1" in
 			
 			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
 			systemctl set-environment kiosk="${kiosks[$seat_pos]}"
-			systemctl restart weston-seat@$lease.service || \
-				( systemctl status weston-seat@$lease.service -l --no-pager && exit 200 )
+#			systemctl restart multiseat-kiosk@$lease.service || \
+			systemctl restart multiseat-weston@$lease.service || \
+				( systemctl status multiseat-weston@$lease.service -l --no-pager && exit 200 )
 
 			while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep $wait_time; done;
 		fi
@@ -330,7 +348,7 @@ case "$1" in
 
 
     "-q" | "-Q") # quit services
-	systemctl stop weston-seat* drm-lease-manager*
+	systemctl stop multiseat-weston* multiseat-dlm*
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	
 	if [[ "$1" == "-q" ]] # looks better with service
@@ -357,7 +375,7 @@ case "$1" in
 
 
     "-j") # journal logs 
-	journalctl -xeu weston-seat* -u drm-lease-manager*
+	journalctl -xeu multiseat*
 	;;
 
 
