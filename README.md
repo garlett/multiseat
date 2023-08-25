@@ -1,4 +1,4 @@
-# install and run
+# Install and run
 cd && wget https://raw.githubusercontent.com/garlett/multiseat/main/multiseat.sh && chmod 770 && ./multiseat.sh -a
 
 # multiseat
@@ -26,11 +26,12 @@ RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working!
 AFIK, the wire nomenclature is CxD, where:
 - C is the number of pairs( signal + ground, some cables shows this as coaxial shielded construction ) for colors, normaly 3; 
 - D is non-color wires.
+ 
 Commom cables:
 - 3x2: RGB HV
-- 3x5: RGB HV SCL SDA presence ?
-- 3x6: RGB HV SCL SDA presence 5V ?
-- 3x9: RGB HV this have all pins connected
+- 3x5: RGB HV SCL SDA presence ? 
+- 3x6: RGB HV SCL SDA presence 5V ? https://pt.aliexpress.com/item/1005005671127960.html https://pt.aliexpress.com/item/4000060507008.html
+- 3x9: RGB HV this have all pins connected https://pt.aliexpress.com/item/1005002598233946.html
   
 EDID requires SCL and SDA, its possible to provide EDID data manually https://wiki.archlinux.org/title/kernel_mode_setting;
 
@@ -39,7 +40,7 @@ This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configu
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/docs/vga_over_rj45.webp?raw=true)
 
-There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side;
+There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side; https://pt.aliexpress.com/item/4001015046270.html
 
 There is also powered converters.
 
