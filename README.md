@@ -1,5 +1,5 @@
 # Install and run
-cd && wget https://raw.githubusercontent.com/garlett/multiseat/main/multiseat.sh && chmod 770 && ./multiseat.sh -a
+cd && wget https://raw.githubusercontent.com/garlett/multiseat/main/multiseat.sh && chmod 770 multiseat.sh && ./multiseat.sh -a
 
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.
