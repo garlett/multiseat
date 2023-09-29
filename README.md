@@ -50,7 +50,7 @@ This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC 
 
 5v (2 wires) and ground (4 wires) are direct connected. 
 
-The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 70uF.
+The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 470uF_10v.
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/docs/usb_over_rj45.webp?raw=true)
 
