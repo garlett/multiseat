@@ -32,7 +32,7 @@ kiosks=("${k[0]}" "${k[0]}" "${k[2]}" "${k[0]}" )
 
 ms_dir="/home/multiseat"
 
-site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
+site=(	"https://raw.githubusercontent.com/garlett/multiseat/10.0.2/" \
 	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/" \ 
 )
 patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
