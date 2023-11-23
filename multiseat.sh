@@ -1,41 +1,24 @@
 #!/bin/bash
 
-# tomlc, drm lease manager and weston 11.0.0 builder on archlinux.
+# tomlc, drm lease manager and weston 10.0.93 builder on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-unset inputs leases usbdvs
-# config start
-inputs[0]+='/sys/class/input/input2 ' ## AT Translated Set 2 keyboard
-inputs[1]+='/sys/class/input/input4 ' ##   USB Keyboard
-inputs[1]+='/sys/class/input/input7 ' # Microsoft Microsoft 5-Button Mouse with IntelliEyeTM
-inputs[0]+='/sys/class/input/input9 ' # ImPS/2 Generic Wheel Mouse
-leases[0]='card0-DVI-I-1'
-leases[1]='card0-VGA-1'
-#leases[2]='card1-DVI-I-2'
-#leases[3]='card1-TV-1'
-#leases[4]='card1-VGA-2'
-usbdvs[0]+='1-1.1 ' # USB Hub 2.0 - ALCOR
-usbdvs[1]+='2-1.3 ' # C270 HD WEBCAM - 
-usbdvs[0]+='2-1.4 ' # Futronic Fingerprint Scanner 2.0 - Futronic Technology Company Ltd.
-usbdvs[1]+='2-1.6 ' # DCP-T820DW - Brother
-# config end
-
-k=('' 'exec firefox' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty' 'LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh')
-kiosks=("${k[3]}" "${k[0]}" "${k[3]}" "${k[0]}" )
+conf=/root/multiseat.conf
 
 ms_dir="/home/multiseat"
 
-site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/" \
+sed_pkg_weston_ver="s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/" # set weston ver = 10.0.93
+
+site=(	"https://raw.githubusercontent.com/garlett/multiseat/main/patch" \
 	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/" \ 
 )
 patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
 	"'${site[0]}0002-Add-DRM-lease-support.patch'" \
 	"'${site[0]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
-#	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged on master already
-#	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged on master already
+#	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged already
+#	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged already
 )
-sed_pkg_weston_ver="s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/" # set weston ver = 10.0.93
 
 
 
@@ -53,26 +36,85 @@ wb="$red[Weston Builder]$white"
 ms="$red[MultiSeat]$white"
 
 
-function get_usb_path_port() {
-	dev=$( basename $1 )
-	bus=$( basename ${1/"$dev"/} )
-	path=$( grep -Przl "BUSNUM=${bus}\nDEVNUM=$dev" /sys/devices/*/*/usb*/ 2> /dev/null )
-	echo ${path/uevent/}
-}
 
-
-function set_usb_owner() {
-	i=0
-	port=$( basename $( get_usb_path_port $1 ) 2> /dev/null )
-	[[ $port == *.* ]] && for lease in ${leases[@]};
+function wait_files(){
+	count=99 # timeout * $wait_time
+	for file in $2
 	do
-		[[ "${usbdvs[$((i++))]}" == *$port* ]] && chown user_$lease $1 && return 0
+		while ! ls $1$file >& /dev/null
+		do
+ 			sleep $wait_time
+			[ $((count--)) -lt 0 ] && echo -e "$ms could not find: $1$file" && break
+		done
 	done
 }
 
+function addc(){
+	arg=${1%%#- *}
+	echo "$cfgs" | sed "s|$arg.*$|$1|"
+	arg=${arg//'\n'/}
+	[[ "$cfgs" == *$arg* ]] || echo "$1"
+}
 
-case "$1" in 
-	
+function start_seat(){ # $1 lease   $2 attach    $3 kiosk   $4 usbdvs  $5 pos
+
+	echo -e "$ms Starting weston seat[$((pos++))] $1 ... $3 "
+
+	useradd -m --badname user_$1 2>/dev/null
+
+	chown user_$1 /home/user_$1 #|| exit 160
+	chown user_$1 /var/local/run/drm-lease-manager/$1{,.lock} || exit 190
+
+	while ! loginctl --no-pager seat-status seat_$1 2> /dev/null
+	do
+		loginctl attach seat_$1 $2
+	done
+	# allocate the drm, to make the seat active in case of all inputs disconnects
+	( sleep ${5}69s ; loginctl attach seat_$1 /sys/devices/pci*/*/*/drm/card*/$1 )& #job+="$! "
+
+			
+	systemctl set-environment kiosk="$3"
+	systemctl set-environment usbdvs="$4"
+	systemctl restart multiseat-weston@$1.service || \
+	  ( systemctl status multiseat-weston@$1.service -l --no-pager && exit 200 )
+
+	while ! [ -e /run/user/$( id -u user_$1 )/wayland-1 ] ; do sleep $wait_time; done;
+}
+
+function get_usb_path_port() { # $1 = /dev/bus/usb/001/016
+	 
+	dev=$( basename $1 )
+	bus=$( basename ${1/"$dev"/} )
+	path=$( grep -Przl "BUSNUM=${bus}\nDEVNUM=$dev" /sys/devices/*/*/usb*/ 2> /dev/null )
+	echo ${path/uevent/} # /sys/devices/pci0000:00/0000:00:1a.0/usb1/1-1/1-1.2
+}
+
+
+function set_usb_owner() { # $1 = /dev/bus/usb/001/016
+
+	port=$( basename $( get_usb_path_port $1 ) 2> /dev/null )
+	lease=$( grep -oz card.*$port $conf | grep -a card* | tail -n 1 )
+	[[ "$lease" != "" ]] && [[ "${lease:0:1}" != "#" ]] && chown user_$lease $1
+}
+
+
+
+case "$1" in
+
+
+    "-u") # start usb owner monitor
+	for dev in /dev/bus/usb/*/*;
+       	do 
+		set_usb_owner $dev
+	done
+	inotifywait /dev/bus/usb -mre create | while read dir action file;
+	do
+		set_usb_owner $dir$file
+	done &
+	;;
+
+
+
     "-l") # create services and links
 	echo -e "$wb creating systemctl services ...."
 	ms_path=$( cd $( dirname $0 ) && pwd )/$( basename $0 )
@@ -190,18 +232,27 @@ case "$1" in
 
     "-b") # build
 	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
+	. $0 -b1
+	. $0 -b2
+	. $0 -b3
+	;;
 
+    "-b1") # build
 	echo -e "$wb building tomlc parser ...."
 	cd $ms_dir/tomlc99/
 	make || exit 60
 	make install || exit 70
+	;;
 
+    "-b2") # build
 	echo -e "$wb building drm-lease-manager ...."
 	cd $ms_dir/drm-lease-manager
 	meson build || exit 80
 	ninja -C build || exit 90
 	ninja -C build install || exit 100
+	;;
 
+    "-b3") # build
 	cd $ms_dir/weston
 	echo -e "$wb Using pacman to remove previus weston installations ...."
 	pacman -R weston --noconfirm
@@ -209,82 +260,12 @@ case "$1" in
 	rm -r src/ pkg/
 	echo -e "$wb Downloading and building weston ...."
 	chown -R ${ms_dir##*/} ../weston/ || exit 105
-	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: insert keys on user and remove skippgpcheck flag
+	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: add user keys, del --skippgpcheck
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
 	echo -e "$wb Building complete !!!"
 	;;
 
 
-    "-c" | "-C" ) # create config
-	echo -e "$ms Creating simple config ...."
-	keybd_pos=0
-	mouse_pos=0
-	for dev in /sys/class/input/input*/capabilities/key;
-	do
-		key_cap=( $(cat $dev | rev) )
-		dev=${dev/'/capabilities/key'/}	
-
-		[[ ${key_cap[0]} == efffffffffffffff ]] && config+="inputs[$((keybd_pos++))]+='$dev ' ## $(cat $dev/name)\n"
-		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] && config+="inputs[$((mouse_pos++))]+='$dev ' #@ $(cat $dev/name)\n"
-		# TODO ? audio
-	done
-	[ $keybd_pos -lt $mouse_pos ] && keybd_pos=$mouse_pos
-
-	lease_pos=0
-	for lease in $(loginctl seat-status | grep drm:card[0-9]- | grep -o card.*);
-	do
-		config+="$( [ $lease_pos -ge $keybd_pos ] && echo "#" )leases[$((lease_pos++))]='$lease'\n"
-	done
-	
-	usb_pos=0 
-	for dev in /dev/bus/usb/*/*;
-       	do 
-		path_port=$( get_usb_path_port $dev )
-		port=$( basename $path_port 2> /dev/null )
-		name="$( cat $path_port/product 2> /dev/null ) - $( cat $path_port/manufacturer 2> /dev/null )"
-		[[ $port == *.* ]] && ! [[ ${name,,} =~ .*(mouse|keyboard).* ]] && \
-			config+="usbdvs[$((usb_pos++))]+='$port ' # $name\n"
-		[ $usb_pos -ge $keybd_pos ] && usb_pos=0
-	done
-
-	# review and save config on this file header
-	echo -e "$config" > /tmp/ms_config.sh
-	for editor in gedit kate nano nvim vim vi
-	do
-		$editor /tmp/ms_config.sh && break
-	done
-	config=$( cat /tmp/ms_config.sh | tr -cd "[:alnum:][]+='#/.\n -" )
-	sed -zi "s:\(# config start\n\).*\(# config end\n\):\1${config//$'\n'/\\n}\n\2:" $0
-
-	[[ "$1" == "-c" ]] && $0 -e # enable config
-	;;
-	
-
-    "-e") # enable config
-	# set "master-of-seat" on input devices
-	sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"$/&, TAG+="master-of-seat"/' \
-		/usr/lib/udev/rules.d/71-seat.rules || exit 140
-	udevadm control --reload && udevadm trigger || exit 150
-
-	$0 -f # disable previus config
-	seat_pos=-1
-	for lease in ${leases[@]};
-	do
-		seat_pos=$((seat_pos + 1))
-		name=$( cat ${inputs[$seat_pos]//' '/'/name '} | tr '\n' ' ' )
-		echo -e "$ms Creating seat $seat_pos '$lease' with: $name"
-		[[ "$name" == "" ]] && echo -e "$ms fail: inputs could not be found." && continue
-
-		useradd --badname user_$lease 2>/dev/null # || exit 170 # user name may not contain uppercase
-		mkdir -p /home/user_$lease
-		chown user_$lease /home/user_$lease || exit 160
-		
-		while ! loginctl --no-pager seat-status seat_$lease 2> /dev/null
-		do
-			loginctl attach seat_$lease ${inputs[$seat_pos]}
-		done
-	done
-	;;
 
 
     "-f") # disable config
@@ -296,41 +277,126 @@ case "$1" in
 	;;
 
 
-    "-d") # dlm service
-	echo -e "$ms Starting drm-lease-manager server service ... "
-	systemctl start `systemd-escape --template=multiseat-dlm@.service /dev/dri/card*` || exit 180 # udev job ?
-	while ! ls /var/local/run/drm-lease-manager/* >& /dev/null ; do sleep $wait_time; done
-	;;
+    "-c") # update config file
+	unset drm d mouse m keyboard k usbd u
+        
+	# find leaseable crtcs
+	drm=( $( basename -a /sys/devices/pci*/*/*/drm/card*/card*) )
+	d=${#drm[@]}
 
-
-    "-r") # restart seats [with arg $2 == lease]
-	loginctl attach seat0 /sys/devices/pci*/*/*/drm/card*
-	seat_pos=0
-	for lease in ${leases[@]};
+	# find ps2 devices
+	for dev in /sys/class/input/input*/capabilities/key;
 	do
-		if [[ "$2" == ""  ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$seat_pos" ]]
-		then
-			echo -e "$ms Starting weston seat $lease ... ${kiosks[$seat_pos]} "
-			chown user_$lease /var/local/run/drm-lease-manager/$lease{,.lock} || exit 190
-			
-			# allocate the drm only to keep the seat active in case of all inputs disconnects
-			( sleep $((($seat_pos+1)*9))s ; loginctl attach seat_$lease \
-				/sys/devices/pci*/*/*/drm/card*/$lease ) & job+="$! "
-			
-			systemctl set-environment usbdvs="${usbdvs[$seat_pos]}"
-			systemctl set-environment kiosk="${kiosks[$seat_pos]}"
-#			systemctl stop multiseat-weston@$lease.service
-#			systemctl restart multiseat-kiosk@$lease.service || \
-			systemctl restart multiseat-weston@$lease.service || \
-				( systemctl status multiseat-weston@$lease.service -l --no-pager && exit 200 )
+		key_cap=( $(cat $dev | rev) )
+		dev=${dev/'/capabilities/key'/}
 
-			while ! [ -e /run/user/$( id -u user_$lease )/wayland-1 ] ; do sleep $wait_time; done;
-		fi
-		seat_pos=$(($seat_pos + 1))
+		[[ $(cat $dev/phys) =~ usb.* ]] && continue
+
+		dev_p_d="$( basename $( dirname $(cat $dev/phys)))	#- $(cat $dev/name))"
+
+		[[ ${key_cap[0]} == efffffffffffffff ]]  && keyboard[$((k++))]="	ps2k $dev_p_d"
+
+		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] &&    mouse[$((m++))]="	ps2m $dev_p_d"
+
+		done
+
+	# find usb devices
+	for dev in /dev/bus/usb/*/*;
+       	do
+		path_port=$( get_usb_path_port $dev )
+		port=$( basename $path_port 2> /dev/null )
+		[[ $port != *.* ]] && continue
+
+		dev_id=$( cat $path_port/idVendor 2> /dev/null ):$( cat $path_port/idProduct 2> /dev/null )
+		name=$( lsusb | grep " $dev_id " | head -n 1 )
+		name=${name:33}
+		serial="$( [ -e $path_port/serial ] && echo " - $( cat $path_port/serial )" )"
+		dev_p_d="$port	#- $name$serial"
+
+
+		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="	usbk $dev_p_d" && continue
+
+		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="	usbm $dev_p_d" && continue
+
+		! [[ ${name,,} =~ .*\ hub\ .* ]] && usbd[$((u++))]="	usbd $dev_p_d" && continue
 	done
-	sleep $wait_time
-	wait $job
+
+	# update multiseat.conf with discovered devices
+	cfgs=$( cat $conf 2> /dev/null )
+
+	p=0 # create config for new devices
+ 	while [ $d -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
+	do
+		[ $d -gt $p ] && cfgs=$(addc "\n$( ([ $p -ge $k ] && [ $p -ge $m ]) && echo '#')${drm[$p]}")
+		[ $k -gt $p ] && cfgs=$(addc "${keyboard[$p]}" )
+		[ $m -gt $p ] && cfgs=$(addc "${mouse[$p]}" )
+		[ $u -gt $p ] && cfgs=$(addc "${usbd[$p]}" )
+		p=$((p+1))
+	done
+
+	echo -e "$cfgs" > $conf
 	;;
+
+
+
+
+
+    "-d") # dlm service
+	echo -e "$ms Starting drm-lease-manager services ... "	
+	
+	wait_files "/dev/dri/" "$( grep ^card[0-9] $conf -o )"
+
+	systemctl start `systemd-escape --template=multiseat-dlm@.service /dev/dri/card*` || exit 180 # udev ?
+	
+	wait_files "/var/local/run/drm-lease-manager/" "$( grep ^card* $conf )"
+	;;
+
+
+
+
+    "-r") # read config and start_seat     $2 seat name or pos
+	# set "master-of-seat" on input devices
+        sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"$/&, TAG+="master-of-seat"/' \
+	        /usr/lib/udev/rules.d/71-seat.rules || exit 140
+	udevadm control --reload && udevadm trigger || exit 150
+
+        cfgs=$( cat $conf 2> /dev/null )
+	cfgs=$( echo -e "$cfgs" | sed -e "s/#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" ) # remove comments
+
+	pos=0
+	unset attach lease kiosk usbd
+	IFS=$'\n'
+	for cfg in $cfgs eof
+	do
+		if [[ ${cfg:0:4} == "ps2k" ]] || [[ ${cfg:0:4} == "ps2m" ]]; then
+
+			attach+="$( echo /sys/devices/platform/*/${cfg:5}/input/input*/ ) "
+
+		elif [[ ${cfg:0:4} == "usbm" ]] || [[ ${cfg:0:4} == "usbk" ]]; then
+
+			attach+="$( echo /sys/devices/pci*/*/usb*/*/${cfg:5}/*/*/input/input*/ ) "
+
+		elif [[ ${cfg:0:4} == "open" ]]; then
+
+			kiosk=${cfg:5}
+
+		elif [[ ${cfg:0:4} == "usbd" ]]; then
+
+			usbd+="${cfg:5} " #set_usb_owner() qemu: add_device $server/seat*/qemu_qmp.socket
+
+		elif [[ ${cfg:0:4} == "card" ]] || [[ ${cfg:0:4} == "eof" ]]; then
+
+			if [[ "$lease" != "" ]] ; then
+				[[ "$2" == ""  ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$((pos++))" ]] \
+				&& start_seat $lease "$attach" "$kiosk" "$usbd" $pos
+			fi
+			lease=$cfg
+			unset attach kiosk usbd
+		fi
+	done
+
+	;;
+
 
 
     "-s") # start services
@@ -343,10 +409,6 @@ case "$1" in
 	deallocvt
 	;;
 
-
-    #"-x") # execute 
-		#systemd-run --collect -E XDG_SESSION_TYPE=wayland -E XDG_SEAT=seat_$lease -E XDG_RUNTIME_DIR=/run/user/1007 \ 
-		#   --uid=1007 -p PAMName=login -p User=user_$lease -p Group=user_$lease weston || exit 210
 
 
     "-q" | "-Q") # quit services
@@ -364,24 +426,18 @@ case "$1" in
 	;;
 
 
-    "-u") # start usb owner monitor
-	for dev in /dev/bus/usb/*/*;
-       	do 
-		set_usb_owner $dev
-	done
-	inotifywait /dev/bus/usb -mre create | while read dir action file;
-	do
-		set_usb_owner $dir$file
-	done &
-	;;
-
-
     "-j") # journal logs 
-	journalctl -xeu multiseat*
+	#journalctl -xe -u multiseat* 
+	journalctl -S -15h -t sh -t multiseat.sh
 	;;
 
+    "-a") # auto
+	. $0 -b
+	. $0 -c
+	. $0 -s
+	;;
 
-    *) # -a auto
+    *)
 	echo -e	"$ms github.com/garlett/multiseat"
 	cat <<- EOF
 		 -b 		[Git clone, link and] build
@@ -395,10 +451,11 @@ case "$1" in
 		 -g		Git clone repositories
 		 -l		Create library links
 		 -e 		Enable config
-		 -f 		Disable config
+		 -f 		Free/Flush/Disable config
 		 -j 		Journal logs
 
-		 after system upgrades, its recommended to run -b then -c
+		 type 'systemctl enable multiseat' to run at boot and replace agetty
+		 after system upgrades, its recommended to run -b3 then -c
 		 before download again run:  rm -R $ms_dir
 		 kiosk app will fail: without connected drm output, or with weston >= 10.0.94
 		 last error: echo \$?
