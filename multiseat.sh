@@ -49,6 +49,7 @@ function wait_files(){
 	done
 }
 
+# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
 function addc(){
 	arg=${1%%#- *}
 	echo "$cfgs" | sed "s|$arg.*$|$1|"
@@ -56,25 +57,33 @@ function addc(){
 	[[ "$cfgs" == *$arg* ]] || echo "$1"
 }
 
-function start_seat(){ # $1 lease   $2 attach    $3 kiosk   $4 usbdvs  $5 pos
 
-	echo -e "$ms Starting weston seat[$((pos++))] $1 ... $3 "
+function seat_attach(){ # $1 lease   $2 attach
+
+	for dev in $2
+	do	
+		retries=9
+		while [ $retries -ge 0 ] && [[ $( loginctl --no-pager seat-status seat_$1 ) != *$dev* ]]
+		do
+			loginctl attach seat_$1 $dev
+			retries=$((retries-1))
+		done
+	done
+	echo "loginctl attach seat_$1" /sys/devices/pci*/*/*/drm/card*/$1
+}
+
+function seat_start(){ # $1 lease   $2 kiosk   $3 usbdvs
+
+	echo -e "$ms Starting weston lease $1 ... $2 "
 
 	useradd -m --badname user_$1 2>/dev/null
 
-	chown user_$1 /home/user_$1 #|| exit 160
-	chown user_$1 /var/local/run/drm-lease-manager/$1{,.lock} || exit 190
-
-	while ! loginctl --no-pager seat-status seat_$1 2> /dev/null
-	do
-		loginctl attach seat_$1 $2
-	done
-	# allocate the drm, to make the seat active in case of all inputs disconnects
-	( sleep ${5}69s ; loginctl attach seat_$1 /sys/devices/pci*/*/*/drm/card*/$1 )& #job+="$! "
+	chown user_$1: -R /home/user_$1 #|| exit 160
+	chown user_$1: /var/local/run/drm-lease-manager/$1{,.lock} || exit 190
 
 			
-	systemctl set-environment kiosk="$3"
-	systemctl set-environment usbdvs="$4"
+	systemctl set-environment kiosk="$2"
+	systemctl set-environment usbdvs="$3"
 	systemctl restart multiseat-weston@$1.service || \
 	  ( systemctl status multiseat-weston@$1.service -l --no-pager && exit 200 )
 
@@ -278,11 +287,18 @@ case "$1" in
 
 
     "-c") # update config file
-	unset drm d mouse m keyboard k usbd u
+	unset drm d mouse m keyboard k usbd u audio a
         
 	# find leaseable crtcs
-	drm=( $( basename -a /sys/devices/pci*/*/*/drm/card*/card*) )
+	drm=($( basename -a /sys/devices/pci*/*/*/drm/card*/card* ) )
 	d=${#drm[@]}
+
+	# find audio devices
+#	for dev in /sys/devices/pci*/*/sound/card*/input* 
+#	do
+#		spkr[$((s++))]="spkr $(echo "$dev" | sed 's|/sys/[^ ]*sound/card||g')	#- $(cat $dev/name)"
+#	done
+
 
 	# find ps2 devices
 	for dev in /sys/class/input/input*/capabilities/key;
@@ -294,9 +310,9 @@ case "$1" in
 
 		dev_p_d="$( basename $( dirname $(cat $dev/phys)))	#- $(cat $dev/name))"
 
-		[[ ${key_cap[0]} == efffffffffffffff ]]  && keyboard[$((k++))]="	ps2k $dev_p_d"
+		[[ ${key_cap[0]} == efffffffffffffff ]]  && keyboard[$((k++))]="ps2k $dev_p_d"
 
-		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] &&    mouse[$((m++))]="	ps2m $dev_p_d"
+		[ "$(echo ${key_cap[4]} | rev)" \> "1" ] &&    mouse[$((m++))]="ps2m $dev_p_d"
 
 		done
 
@@ -314,27 +330,29 @@ case "$1" in
 		dev_p_d="$port	#- $name$serial"
 
 
-		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="	usbk $dev_p_d" && continue
+		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $dev_p_d" && continue
 
-		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="	usbm $dev_p_d" && continue
+		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="usbm $dev_p_d" && continue
 
-		! [[ ${name,,} =~ .*\ hub\ .* ]] && usbd[$((u++))]="	usbd $dev_p_d" && continue
+		! [[ ${name,,} =~ .*\ hub\ .* ]] && usbd[$((u++))]="usbd $dev_p_d" && continue
 	done
 
 	# update multiseat.conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
 
 	p=0 # create config for new devices
- 	while [ $d -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
+ 	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
 	do
 		[ $d -gt $p ] && cfgs=$(addc "\n$( ([ $p -ge $k ] && [ $p -ge $m ]) && echo '#')${drm[$p]}")
-		[ $k -gt $p ] && cfgs=$(addc "${keyboard[$p]}" )
-		[ $m -gt $p ] && cfgs=$(addc "${mouse[$p]}" )
-		[ $u -gt $p ] && cfgs=$(addc "${usbd[$p]}" )
+		[ $s -gt $p ] && cfgs=$(addc "	${spkr[$p]}" )
+		[ $k -gt $p ] && cfgs=$(addc "	${keyboard[$p]}" )
+		[ $m -gt $p ] && cfgs=$(addc "	${mouse[$p]}" )
+		[ $u -gt $p ] && cfgs=$(addc "	${usbd[$p]}" )
 		p=$((p+1))
 	done
 
 	echo -e "$cfgs" > $conf
+	echo -e "$ms now you should edit $conf ..."
 	;;
 
 
@@ -364,17 +382,20 @@ case "$1" in
 	cfgs=$( echo -e "$cfgs" | sed -e "s/#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" ) # remove comments
 
 	pos=0
-	unset attach lease kiosk usbd
+	unset attach lease kiosk usbd drm_reattach
+	oIFS=$IFS
 	IFS=$'\n'
 	for cfg in $cfgs eof
 	do
+		IFS=$oIFS
 		if [[ ${cfg:0:4} == "ps2k" ]] || [[ ${cfg:0:4} == "ps2m" ]]; then
 
 			attach+="$( echo /sys/devices/platform/*/${cfg:5}/input/input*/ ) "
 
 		elif [[ ${cfg:0:4} == "usbm" ]] || [[ ${cfg:0:4} == "usbk" ]]; then
 
-			attach+="$( echo /sys/devices/pci*/*/usb*/*/${cfg:5}/*/*/input/input*/ ) "
+			attach+="$( echo /sys/devices/pci*/*/usb2/*/${cfg:5}/*/*/input/input*/ ) " 
+			# path set to usb2 istead of usb*
 
 		elif [[ ${cfg:0:4} == "open" ]]; then
 
@@ -384,17 +405,28 @@ case "$1" in
 
 			usbd+="${cfg:5} " #set_usb_owner() qemu: add_device $server/seat*/qemu_qmp.socket
 
+		elif [[ ${cfg:0:4} == "spkr" ]]; then
+
+			attach+="$( echo /sys/devices/pci*/*/sound/card${cfg:5} ) "
+			
 		elif [[ ${cfg:0:4} == "card" ]] || [[ ${cfg:0:4} == "eof" ]]; then
 
 			if [[ "$lease" != "" ]] ; then
-				[[ "$2" == ""  ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$((pos++))" ]] \
-				&& start_seat $lease "$attach" "$kiosk" "$usbd" $pos
+				if [[ "$2" == "" ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$pos" ]]
+				then
+					drm_reattach+="sleep 6.9s ; $( seat_attach "$lease" "$attach" ) ; "
+					seat_start "$lease" "$kiosk" "$usbd"
+				fi
+				pos=$((pos+1))
 			fi
 			lease=$cfg
 			unset attach kiosk usbd
 		fi
 	done
-
+	if [[ "$2" == "" ]] # attach drm to do not lose seat when all inputs reconnects
+	then
+		ps -fC sleep | grep -q 'sleep 6.9s' || exec /bin/bash -c "while : ; do $drm_reattach done " &
+	fi
 	;;
 
 
@@ -404,6 +436,7 @@ case "$1" in
 	. $0 -d # start dlm-lease-manager services
 	. $0 -r # start weston seats services
 
+	echo -e "$ms stopping root session ..."
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
 	systemctl stop getty*
 	deallocvt
@@ -412,6 +445,7 @@ case "$1" in
 
 
     "-q" | "-Q") # quit services
+	echo -e "$ms Stopping ... "
 	systemctl stop multiseat-weston* multiseat-dlm*
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	
@@ -428,7 +462,7 @@ case "$1" in
 
     "-j") # journal logs 
 	#journalctl -xe -u multiseat* 
-	journalctl -S -15h -t sh -t multiseat.sh
+	journalctl -S -12h -t sh -t multiseat.sh
 	;;
 
     "-a") # auto
