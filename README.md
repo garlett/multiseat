@@ -35,7 +35,7 @@ Commom cables:
   
 EDID requires SCL and SDA, its possible to provide EDID data manually https://wiki.archlinux.org/title/kernel_mode_setting;
 ```
-echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=card1-DVI-I-2:1366x768@60e"' >> /etc/default/grub && grub-mkconfig -o /boot/grub/grub.cfg
+echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DVI-I-2:1366x768@60e"' >> /etc/default/grub && grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
 
