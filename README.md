@@ -34,6 +34,12 @@ Commom cables:
 - 3x9: RGB HV this have all pins connected https://pt.aliexpress.com/item/1005002598233946.html
   
 EDID requires SCL and SDA, its possible to provide EDID data manually https://wiki.archlinux.org/title/kernel_mode_setting;
+```
+echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=card1-DVI-I-2:1366x768@60e"' >> /etc/default/grub && grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+
+
 
 # VGA over RJ45
 This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
