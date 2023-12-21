@@ -287,8 +287,14 @@ case "$1" in
 
 
     "-c") # update config file
-	unset drm d mouse m keyboard k usbd u audio a
-        
+	unset drm mouse keyboard usbd audio spkr 
+        d=0
+        m=0
+	k=0
+	u=0
+	a=0
+	s=0
+
 	# find leaseable crtcs
 	drm=($( basename -a /sys/devices/pci*/*/*/drm/card*/card* ) )
 	d=${#drm[@]}
@@ -339,6 +345,7 @@ case "$1" in
 
 	# update multiseat.conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
+	[[ "$cfgs" == ""  ]] && cfgs="#open LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
