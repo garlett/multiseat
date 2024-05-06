@@ -12,7 +12,7 @@ what it does:
 - start weston service for each seat with non-root user
 - start weston kiosk mode and the application (needs weston <= 10.0.93)
 
-tested with: two monitors on a nvdia 6200, two mouses and two keyboards.
+Currently using with 4 seats on nvdia gf6200 and gf7300
 
 RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working! 
 
@@ -66,6 +66,13 @@ USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device
 - 14mV for keyboard;
 - 14mV for each keyboard led;
 
+On average the USB port drops once per day because AC interference. Sometimes it requires wire replug or driver rebind.
 
+# HDMI
+Testing with one 9 metres cable and HDMI to VGA converter ...
 
+But if you have hdmi monitors, Laranja Pi Zero 3 could be another alternative ( headless weston with spice, then the SBC connects to the server ).
+
+# Wireless Mouse and Keyboard
+Working fine with a cheap ( Satellite AK-726G ) combo that I bought locally for U$ 11.00 at 5 meters with obstacles.
 
