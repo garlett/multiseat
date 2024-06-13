@@ -12,7 +12,7 @@ what it does:
 - start weston service for each seat with non-root user
 - start weston kiosk mode and the application (needs weston <= 10.0.93)
 
-Currently using with 4 seats on nvdia gf6200 and gf7300
+Currently using with 4 seats on nvdia gf7300 and amd R5 230
 
 RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working! 
 
@@ -38,9 +38,6 @@ EDID requires SCL and SDA, its possible to provide EDID data manually https://wi
 echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DVI-I-2:1366x768@60e"' >> /etc/default/grub && grub-mkconfig -o /boot/grub/grub.cfg
 ```
 
-
-
-
 # VGA over RJ45
 This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
 
@@ -49,6 +46,14 @@ This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configu
 There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side; https://pt.aliexpress.com/item/4001015046270.html
 
 There is also powered converters.
+
+# HDMI cable with VGA converter
+Because power drop in the "9 metres of hmdi cable", the adapter only returns monitor edid data, and cannot convert to vga.
+
+But if you have hdmi monitors, you could use only the cable, or "Laranja Pi Zero 3" could be another alternative ( headless weston with spice, then the SBC connects to the server ).
+
+
+
 
 # USB over RJ45 extender
 
@@ -68,11 +73,7 @@ USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device
 
 On average the USB port drops once per day because AC interference. Sometimes it requires wire replug or driver rebind.
 
-# HDMI
-Testing with one 9 metres cable and HDMI to VGA converter ...
-
-But if you have hdmi monitors, Laranja Pi Zero 3 could be another alternative ( headless weston with spice, then the SBC connects to the server ).
-
 # Wireless Mouse and Keyboard
-Working fine with a cheap ( Satellite AK-726G ) combo that I bought locally for U$ 11.00 at 5 meters with obstacles.
+- Krab KBKTM10 combo U$ 7.50, working at 5 meters with obstacles.
+- Satellite AK-726G combo U$ 11.00, working at 5 meters with obstacles, the mouse have a bug that lags after resume from idle and the keyborad eat characters.
 
