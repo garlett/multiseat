@@ -63,7 +63,7 @@ This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC 
 
 The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 470uF_10v.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/13.0.1/main/docs/usb_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/usb_over_rj45.webp?raw=true)
 
 USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device, at 10 meters was:
 - 10 mV for a cheap 4-port hub;
