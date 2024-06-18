@@ -18,7 +18,7 @@ RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working!
 
 ***Need help on refering this repo on multi seat tutorials.***
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
 
 
 
@@ -41,7 +41,7 @@ echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DV
 # VGA over RJ45
 This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/docs/vga_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/vga_over_rj45.webp?raw=true)
 
 There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side; https://pt.aliexpress.com/item/4001015046270.html
 
@@ -63,7 +63,7 @@ This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC 
 
 The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 470uF_10v.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/main/docs/usb_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/13.0.1/main/docs/usb_over_rj45.webp?raw=true)
 
 USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device, at 10 meters was:
 - 10 mV for a cheap 4-port hub;
