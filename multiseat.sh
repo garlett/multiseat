@@ -10,8 +10,8 @@ ms_dir="/home/multiseat"
 
 #sed_pkg_weston_ver="s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/" # set weston ver = 10.0.93
 
-site=(	"https://raw.githubusercontent.com/garlett/multiseat/13.0.1/patch" \
-	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/" \ 
+site=(	"https://raw.githubusercontent.com/garlett/multiseat/13.0.1/patch/" \
+	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/"\
 	"https://gitlab.archlinux.org/archlinux/packaging/packages/weston/-/raw/main/" \
 )
 patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
@@ -279,7 +279,7 @@ case "$1" in
 		
 		# use the following if you want weston as kiosk parent
 		Type=simple
-		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk:22} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so ${kiosk:0:22}"
+		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.2s; done; ${kiosk:22} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so ${kiosk:0:22}"
 		EOF
 
 	cat <<- 'EOF' > /etc/systemd/system/multiseat-kiosk@.service
@@ -316,10 +316,11 @@ case "$1" in
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
-		xorg-wayland xcb-util-cursor || exit 40
+		xorg-xwayland xcb-util-cursor || exit 40
 
 	useradd ${ms_dir##*/}
 	mkdir -p $ms_dir/weston
+#	chown ${ms_dir##*/} $ms_dir
 	cd $ms_dir || exit 45
 
 	echo -e "$wb git clone tomlc99 library ...."
@@ -333,7 +334,7 @@ case "$1" in
 	cd $ms_dir/weston
 	wget "${site[2]}PKGBUILD" || exit 55
 	#sed -i "s/'SKIP'/&{,,,}/g ; $sed_pkg_weston_ver" PKGBUILD
-	echo "source+=( ${patch[@]} ); sha256sum+=( SKIP {,,} ); source[1]=${site[2]}${source[1]}" >> PKGBUILD
+	echo "source+=( ${patch[@]} ); sha256sums+=( SKIP{,,} ); source[2]=\"${site[2]}\${source[2]}\"" >> PKGBUILD
 	;;
 
 
@@ -366,7 +367,7 @@ case "$1" in
 	echo -e "$wb Removing previus weston build ...."
 	rm -r src/ pkg/
 	echo -e "$wb Downloading and building weston ...."
-	chown -R ${ms_dir##*/} ../weston/ || exit 105
+	chown -R ${ms_dir##*/} ../ || exit 105
 	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: add user keys, del --skippgpcheck
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
 	echo -e "$wb Building complete !!!"
