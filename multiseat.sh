@@ -279,7 +279,7 @@ case "$1" in
 		
 		# use the following if you want weston as kiosk parent
 		Type=simple
-		ExecStart=/bin/sh -c "( while [[ "${kiosk}" != "" ]] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk:22} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so ${kiosk:0:22}"
+		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.1s; done; ${kiosk:22} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so ${kiosk:0:22}"
 		EOF
 
 	cat <<- 'EOF' > /etc/systemd/system/multiseat-kiosk@.service
