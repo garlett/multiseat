@@ -224,7 +224,7 @@ index ac355f1..b0d32a0 100644
 +option(
 +        'drm-lease',
 +        type: 'boolean',
-+        value: false,
++        value: true,
 +        description: 'Support for running weston with a leased DRM Master'
 +)
 +
