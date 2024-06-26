@@ -52,13 +52,15 @@ function wait_files(){ # $1 path    $2 files
 	done
 }
 
+
+# wait vga cards
 vga_count=$( lspci | grep VGA | wc -l )
 while [ $vga_count -gt 0 ]
 do
 	wait_files /sys/class/drm/ card$((--vga_count))
 done
 
-
+# config file based on current hardware path configuration
 conf=$( echo /sys/devices/pci*/*/*/drm/card*/card* /sys/devices/pci*/*/drm/card*/card* )
 [[ "$conf" != "" ]] && conf=/etc/multiseat_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
@@ -110,9 +112,6 @@ function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
 }
 
 
-
-# from log: sometimes seat_start does not have device paths
-
 function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 
 	echo -e "$ms start_seat $3 $2 $1"
@@ -126,7 +125,7 @@ function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 
 		[[ "${dev:0:12}" != "/sys/devices" ]] && usbdvs+=" $dev" && continue
 		
-		[[ "$2" != "" ]] && [[ "$2" != "$3" ]] && [[ "$2" != "$er" ]] && echo -e "$ms abort seat $3 " && return
+		[[ "$2" != "" ]] && [[ "$2" != "$3" ]] && [[ "$2" != "$er" ]] && echo -e "$ms ignoring seat $3 " && return
 		
 		count=29 # timeout * $wait_time
 		while [[ $( loginctl --no-pager seat-status seat_$er 2> /dev/null ) != *$( basename $dev )* ]]
@@ -172,7 +171,7 @@ function get_conf(){ # $1 [ seat name || seat pos ]
 
 
 			"usbm" | "usbk" )
-				attach+=" $( echo /sys/devices/pci*/*/usb2/driver/${cfg:5}/*/*/input/input* )"
+				attach+=" $( echo /sys/devices/pci*/*/usb2/driver/[0-9]${cfg:6}/*/*/input/input* )"
 				;; # path set to usb2 istead of usb*   # after usb: driver or * ?
 
 			"open" )
@@ -441,7 +440,7 @@ case "$1" in
 
 	# update $conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="#	open exec alacritty -e /home/login.sh"
+	[[ "$cfgs" == ""  ]] && cfgs="#	open alacritty -e /home/login.sh"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
