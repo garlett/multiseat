@@ -10,7 +10,7 @@ what it does:
 - creates configuration for: keyboards, mouses and videos
 - apply kmv config on the seats
 - start weston service for each seat with non-root user
-- start weston kiosk mode and the application (needs weston <= 10.0.93)
+- start weston kiosk mode and the application
 
 Currently using with 4 seats on nvdia gf7300 and amd R5 230
 
@@ -39,11 +39,11 @@ echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DV
 ```
 
 # VGA over RJ45
-This cheap adapter https://www.aliexpress.com/item/32887231519.htm comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
+ [This cheap adapter](https://pt.aliexpress.com/item/32813247399.html) comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/vga_over_rj45.webp?raw=true)
 
-There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side; https://pt.aliexpress.com/item/4001015046270.html
+There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side;
 
 There is also powered converters.
 
