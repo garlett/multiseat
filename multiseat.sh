@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# tomlc, drm lease manager and weston 10.0.93 builder on archlinux.
+# tomlc, drm lease manager and weston 13.0.1 builder on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
 # [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
 
 ms_dir="/home/multiseat"
-
-#sed_pkg_weston_ver="s/\(pkgver=\).*$/\110.0.93/ ; s/\(sums=(\).*$/\1'SKIP'/" # set weston ver = 10.0.93
 
 site=(	"https://raw.githubusercontent.com/garlett/multiseat/13.0.1/patch/" \
 	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/"\
@@ -64,27 +62,93 @@ done
 conf=$( echo /sys/devices/pci*/*/*/drm/card*/card* /sys/devices/pci*/*/drm/card*/card* )
 [[ "$conf" != "" ]] && conf=/etc/multiseat_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
-
-#############################################
-[[ "-S" == "$1" ]] && echo "$1 $conf" >> /root/conf.conf
-conf=/etc/multiseat_0DVID10HDMIA10VGA21DVII11TV11VGA1.conf
-#############################################
-
 [[ "$conf" != "" ]] && ln -sf $conf /tmp/multiseat.conf
-
-#! [ -e "$conf" ] && [[ "-S" == "$1" ]] && ( systemctl disable multiseat; reboot )
 ! [ -e "$conf" ] && [[ "-S" == "$1" ]] && ( echo -e "$ms Config '$conf' not found!"; systemctl start getty@tty1.service ; killall multiseat.sh )
 
 
 
 
-# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
-function addc(){  # $1 new config
-	arg=${1%%#- *}
-	echo "$cfgs" | sed "s|$arg.*$|$1|"
-	arg=${arg//'\n'/}
-	[[ "$cfgs" == *$arg* ]] || echo "$1"
+function set_usb_owner() { #  $1 user        $2 2-1.3
+	usbdev=$( grep -h "DEVNAME=.*$" /sys/devices/*/*/usb2/driver/$2/uevent | head -n 1 )
+	[[ "$usbdev" != "" ]] && chown $1 /dev/${usbdev/"DEVNAME="/} # /dev/bus/usb/002/003
+} # qemu: add_device $server/seat_$1/qemu_qmp.socket
+
+
+function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
+
+	echo -e "$ms Starting seat guard ... "
+	while : ;
+	do
+		IFS=$'\n'
+		for seat in $1
+		do
+			unset er kiosk
+			IFS=';'
+			for dev in $seat
+			do
+				[[ "$dev" == "" ]] && continue
+
+				[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
+
+				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
+
+				[[ "${dev:0:12}" != "/sys/devices" ]] && set_usb_owner u$er $dev && continue
+		
+				loginctl attach seat_$er $dev &
+			done
+		done
+		
+		[ $((x++)) -gt 0 ] && x=0;
+		grep -q speed /proc/mdstat && \
+			for led in /sys/class/leds/input*scrolllock/brightness ;
+			do
+				echo $x > $led ;
+			done
+		sleep $2
+	done
+	IFS=$oIFS
 }
+
+
+
+# from log: sometimes seat_start does not have device paths
+
+function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
+
+	echo -e "$ms start_seat $3 $2 $1"
+	unset er kiosk usbdvs
+	IFS=';'
+	for dev in $1
+	do
+		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$( [[ "$dev" != "" ]] && echo "--shell=kiosk-shell.so") $dev" && continue
+
+		[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
+
+		[[ "${dev:0:12}" != "/sys/devices" ]] && usbdvs+=" $dev" && continue
+		
+		[[ "$2" != "" ]] && [[ "$2" != "$3" ]] && [[ "$2" != "$er" ]] && echo -e "$ms abort seat $3 " && return
+		
+		count=29 # timeout * $wait_time
+		while [[ $( loginctl --no-pager seat-status seat_$er 2> /dev/null ) != *$( basename $dev )* ]]
+		do
+			sleep $wait_time
+			[ $((count--)) -lt 0 ] && echo -e "$ms [warn] seat_$er does not have: $( basename $dev )" && break
+		done
+		
+	done
+	IFS=$oIFS
+
+	wait_files /var/local/run/drm-lease-manager/ "card$er card$er.lock"
+	useradd -m --badname u$er 2>/dev/null
+	chown u$er: -R /home/u$er #|| exit 160
+	chown u$er: /var/local/run/drm-lease-manager/card$er{,.lock} || exit 190
+
+	systemctl set-environment usbdvs="$usbdvs"
+	systemctl set-environment kiosk="$kiosk"
+	systemctl restart multiseat-weston@$er.service || \
+	  ( systemctl status multiseat-weston@$er.service -l --no-pager && exit 200 )
+}
+
 
 
 
@@ -141,88 +205,15 @@ function get_conf(){ # $1 [ seat name || seat pos ]
 	done
 }
 
-# from log: sometimes seat_start does not have device paths
 
-function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 
-	echo -e "$ms start_seat $3 $2 $1"
-	unset er kiosk usbdvs
-	IFS=';'
-	for dev in $1
-	do
-		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$( [[ "$dev" != "" ]] && echo "--shell=kiosk-shell.so") $dev" && continue
-
-		[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
-
-		[[ "${dev:0:12}" != "/sys/devices" ]] && usbdvs+=" $dev" && continue
-		
-		[[ "$2" != "" ]] && [[ "$2" != "$3" ]] && [[ "$2" != "$er" ]] && echo "$ms abort seat $3 " && return
-		
-		count=29 # timeout * $wait_time
-		while [[ $( loginctl --no-pager seat-status seat_$er 2> /dev/null ) != *$( basename $dev )* ]]
-		do
-			sleep $wait_time
-			[ $((count--)) -lt 0 ] && echo -e "$ms [warn] seat_$er does not have: $( basename $dev )" && break
-		done
-		
-	done
-	IFS=$oIFS
-
-	wait_files /var/local/run/drm-lease-manager/ "card$er card$er.lock"
-	useradd -m --badname u$er 2>/dev/null
-	chown u$er: -R /home/u$er #|| exit 160
-	chown u$er: /var/local/run/drm-lease-manager/card$er{,.lock} || exit 190
-
-	systemctl set-environment usbdvs="$usbdvs"
-	systemctl set-environment kiosk="$kiosk"
-	systemctl restart multiseat-weston@$er.service || \
-	  ( systemctl status multiseat-weston@$er.service -l --no-pager && exit 200 )
+# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
+function addc(){  # $1 new config
+	arg=${1%%#- *}
+	echo "$cfgs" | sed "s|$arg.*$|$1|"
+	arg=${arg//'\n'/}
+	[[ "$cfgs" == *$arg* ]] || echo "$1"
 }
-
-
-function set_usb_owner() { #  $1 user        $2 2-1.3
-	usbdev=$( grep -h "DEVNAME=.*$" /sys/devices/*/*/usb2/driver/$2/uevent | head -n 1 )
-	[[ "$usbdev" != "" ]] && chown $1 /dev/${usbdev/"DEVNAME="/} # /dev/bus/usb/002/003
-} # qemu: add_device $server/seat_$1/qemu_qmp.socket
-
-
-
-function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
-
-	echo -e "$ms Starting seat guard ... "
-	while : ;
-	do
-		IFS=$'\n'
-		for seat in $1
-		do
-			unset er kiosk
-			IFS=';'
-			for dev in $seat
-			do
-				[[ "$dev" == "" ]] && continue
-
-				[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
-
-				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
-
-				[[ "${dev:0:12}" != "/sys/devices" ]] && set_usb_owner u$er $dev && continue
-		
-				loginctl attach seat_$er $dev &
-			done
-		done
-		
-		[ $((x++)) -gt 0 ] && x=0;
-		grep -q speed /proc/mdstat && \
-			for led in /sys/class/leds/input*scrolllock/brightness ;
-			do
-				echo $x > $led ;
-			done
-		sleep $2
-	done
-	IFS=$oIFS
-}
-
-
 
 
 
@@ -320,7 +311,6 @@ case "$1" in
 
 	useradd ${ms_dir##*/}
 	mkdir -p $ms_dir/weston
-#	chown ${ms_dir##*/} $ms_dir
 	cd $ms_dir || exit 45
 
 	echo -e "$wb git clone tomlc99 library ...."
@@ -333,7 +323,6 @@ case "$1" in
 	echo -e "$wb preparing weston arch package file descriptor ...."
 	cd $ms_dir/weston
 	wget "${site[2]}PKGBUILD" || exit 55
-	#sed -i "s/'SKIP'/&{,,,}/g ; $sed_pkg_weston_ver" PKGBUILD
 	echo "source+=( ${patch[@]} ); sha256sums+=( SKIP{,,} ); source[2]=\"${site[2]}\${source[2]}\"" >> PKGBUILD
 	;;
 
@@ -362,15 +351,23 @@ case "$1" in
 
     "-b3") # build
 	cd $ms_dir/weston
+	echo -e "$wb Removing previus weston build and source code ...."
+	rm -r pkg/ src/
+
+	echo -e "$wb Downloading weston ...."
+	chown -R ${ms_dir##*/} ../ || exit 105
+	sudo -u${ms_dir##*/} makepkg --nobuild --skippgpcheck --noprepare || exit 110
+
+	echo -e "$wb Building weston ...."
+	sudo -u${ms_dir##*/} makepkg --force --skippgpcheck || exit 110 # TODO: add user keys, del --skippgpcheck
+
 	echo -e "$wb Using pacman to remove previus weston installations ...."
 	pacman -R weston --noconfirm
-	echo -e "$wb Removing previus weston build ...."
-	rm -r src/ pkg/
-	echo -e "$wb Downloading and building weston ...."
-	chown -R ${ms_dir##*/} ../ || exit 105
-	sudo -u${ms_dir##*/} makepkg -f --skippgpcheck || exit 110 # TODO: add user keys, del --skippgpcheck
+
+	echo -e "$wb Installing weston ...."
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
-	echo -e "$wb Building complete !!!"
+	
+	echo -e "$wb Instalation complete !!!"
 	;;
 
 
@@ -444,7 +441,7 @@ case "$1" in
 
 	# update $conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="#	open LIBGL_ALWAYS_SOFTWARE=1 exec alacritty -e /home/login.sh"
+	[[ "$cfgs" == ""  ]] && cfgs="#	open exec alacritty -e /home/login.sh"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
@@ -509,7 +506,7 @@ case "$1" in
 	. $0 -d # start dlm-lease-manager services
 	. $0 -r # start weston seats services
 
-	[[ "$1" == "-s" ]] && read -p "$ms waiting to stop root session ..."
+	[[ "$1" == "-s" ]] && read -p " waiting to stop root session ..."
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
 	systemctl stop getty*
 	deallocvt
@@ -568,7 +565,7 @@ case "$1" in
 		 After system upgrades, you may need to run -b3 and -c
 		 After update multiseat.sh, its recommended to run -l
 		 Before download again run:  rm -R $ms_dir
-		 Kiosk app will fail: without connected drm output, or with weston >= 10.0.94
+		 Kiosk app will fail: without connected drm output
 		 Last error: echo \$?
 		EOF
 	;;
