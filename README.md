@@ -20,7 +20,14 @@ RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working!
 
 ![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
 
+# VGA adapters
+The boards that I tested can only work with two displays at the same time: gf6200 and gf7300: VGA, DVI-I; r5 230: VGA, HDMI, DVI-D (it has the analog pins, but they are connected to the vga);
 
+I guess that intermediary boards could accept 3 outputs and high end boards 4 or more.
+
+[Sparkle Intel Arc A310 ELF](https://www.amazon.com/dp/B0CHN9R4P2?tag=pcpapi-20&linkCode=ogi&th=1) and [Asus GT710](https://pcpartpicker.com/product/P2CFf7/asus-geforce-gt-710-2-gb-video-card-gt710-4h-sl-2gd5) should take 4 displays.
+
+Did not tested usb(3) to vga or hdmi (probably does not require drm lease)
 
 # VGA cables
 AFIK, the wire nomenclature is CxD, where:
