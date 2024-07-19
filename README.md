@@ -29,6 +29,8 @@ I guess that intermediary boards could accept 3 outputs and high end boards 4 or
 
 Did not tested usb(3) to vga or hdmi (probably does not require drm lease)
 
+Did not tested DisplayPort Multi-Stream Transport (Daisy-chained monitors or DisplayPort MST hub)
+
 # VGA cables
 AFIK, the wire nomenclature is CxD, where:
 - C is the number of pairs( signal + ground, some cables shows this as coaxial shielded construction ) for colors, normaly 3; 
