@@ -309,7 +309,7 @@ case "$1" in
 		xorg-xwayland xcb-util-cursor || exit 40
 
 	useradd ${ms_dir##*/}
-	mkdir -p $ms_dir/weston
+	mkdir -p $ms_dir
 	cd $ms_dir || exit 45
 
 	echo -e "$wb git clone tomlc99 library ...."
@@ -318,11 +318,20 @@ case "$1" in
 
 	echo -e "$wb git clone drm-lease-manager ...."
 	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 50
+ 
+        $0 -g3
+        ;;
 
+    "-g3") 
 	echo -e "$wb preparing weston arch package file descriptor ...."
+        mkdir -p $ms_dir/weston
 	cd $ms_dir/weston
 	wget "${site[2]}PKGBUILD" || exit 55
 	echo "source+=( ${patch[@]} ); sha256sums+=( SKIP{,,} ); source[2]=\"${site[2]}\${source[2]}\"" >> PKGBUILD
+
+        echo -e "$wb Downloading weston ..."
+	chown -R ${ms_dir##*/} ../ || exit 57
+	sudo -u${ms_dir##*/} makepkg --skippgpcheck --nobuild || exit 58
 	;;
 
 
@@ -351,21 +360,14 @@ case "$1" in
     "-b3") # build
 	cd $ms_dir/weston
 	echo -e "$wb Removing previus weston build and source code ...."
-	rm -r pkg/ src/
-
-	echo -e "$wb Downloading weston ...."
-	chown -R ${ms_dir##*/} ../ || exit 105
-	sudo -u${ms_dir##*/} makepkg --nobuild --skippgpcheck --noprepare || exit 110
-
+	rm -r pkg/ src/build/
 	echo -e "$wb Building weston ...."
-	sudo -u${ms_dir##*/} makepkg --force --skippgpcheck || exit 110 # TODO: add user keys, del --skippgpcheck
+	sudo -u${ms_dir##*/} makepkg --skippgpcheck --noextract --force || exit 110 # TODO: add user keys, del --skippgpcheck
 
 	echo -e "$wb Using pacman to remove previus weston installations ...."
 	pacman -R weston --noconfirm
-
-	echo -e "$wb Installing weston ...."
+        echo -e "$wb Installing weston ...."
 	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
-	
 	echo -e "$wb Instalation complete !!!"
 	;;
 
