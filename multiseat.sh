@@ -302,6 +302,8 @@ case "$1" in
 	cd $ms_dir || exit 45
 	echo -e "$wb git clone wlroots ...."
 	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
+	git reset --hard
+	git checkout 0.18.0
 	echo -e "$wb patching wlroots ...."
 	wget "https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/patch/0001-wlr-add-drm-lease-support.patch"
 	patch -Np1 < 0001-wlr-add-drm-lease-support.patch
