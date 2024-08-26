@@ -1,23 +1,12 @@
 #!/bin/bash
 
-# tomlc, drm lease manager and weston 13.0.1 builder on archlinux.
+# tomlc, drm lease manager, wlroots and labwc builder on archlinux.
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
 # [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
 
 ms_dir="/home/multiseat"
-
-site=(	"https://raw.githubusercontent.com/garlett/multiseat/13.0.1/patch/" \
-	"https://gerrit.automotivelinux.org/gerrit/gitweb?p=AGL/meta-agl-devel.git;a=blob_plain;f=meta-agl-drm-lease/recipes-graphics/weston/weston/"\
-	"https://gitlab.archlinux.org/archlinux/packaging/packages/weston/-/raw/main/" \
-)
-patch=(	"'${site[0]}0001-backend-drm-Add-method-to-import-DRM-fd.patch'" \
-	"'${site[0]}0002-Add-DRM-lease-support.patch'" \
-	"'${site[0]}0001-compositor-do-not-request-repaint-in-output_enable.patch'" \
-#	"'${site[1]}0003-launcher-do-not-touch-VT-tty-while-using-non-default.patch'" \	# merged already
-#	"'${site[1]}0004-launcher-direct-handle-seat0-without-VTs.patch'" \		# merged already
-)
 
 wait_time=0.1s	# time between exist checks 
 
@@ -32,7 +21,7 @@ fi
 
 red="\e[1;31m"
 white="\e[0m"
-wb="$red[Weston Builder]$white"
+wb="$red[MultiSeat Builder]$white"
 ms="$red[MultiSeat]$white"
 oIFS=$IFS
 
@@ -119,7 +108,7 @@ function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 	IFS=';'
 	for dev in $1
 	do
-		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$( [[ "$dev" != "" ]] && echo "--shell=kiosk-shell.so") $dev" && continue
+		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev" && continue
 
 		[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
 
@@ -142,10 +131,13 @@ function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 	chown u$er: -R /home/u$er #|| exit 160
 	chown u$er: /var/local/run/drm-lease-manager/card$er{,.lock} || exit 190
 
+	systemctl set-environment SEATD_VTBOUND=0
+	systemctl set-environment WAYLAND_DISPLAY=wayland-1
+	systemctl set-environment XDG_SESSION_TYPE=wayland
+	systemctl set-environment XDG_SEAT=seat_%i
 	systemctl set-environment usbdvs="$usbdvs"
 	systemctl set-environment kiosk="$kiosk"
-	systemctl restart multiseat-weston@$er.service || \
-	  ( systemctl status multiseat-weston@$er.service -l --no-pager && exit 200 )
+	systemctl restart multiseat-compositor@$er.service
 }
 
 
@@ -251,44 +243,18 @@ case "$1" in
 		ExecStart=/usr/local/bin/drm-lease-manager %I
 		EOF
 
-	cat <<- 'EOF' > /etc/systemd/system/multiseat-weston@.service
+	cat <<- 'EOF' > /etc/systemd/system/multiseat-compositor@.service
 		[Unit]
-		Description=Multiseat Weston Launcher
+		Description=Multiseat Compositor Launcher
 		After=systemd-user-sessions.service
 
 		[Service]
 		PAMName=login
-		Environment=SEATD_VTBOUND=0
-		Environment=WAYLAND_DISPLAY=wayland-1
-		Environment=XDG_SESSION_TYPE=wayland
-		Environment=XDG_SEAT=seat_%i
 		User=u%i
 		
-		#Type=notify
-		#ExecStart=/bin/sh -c "/usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so --modules=systemd-notify.so ${kioski:0:22}"
-		
-		# use the following if you want weston as kiosk parent
 		Type=simple
-		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.2s; done; ${kiosk:22} ) & x=1; /usr/bin/weston --seat=seat_%i --drm-lease=card%i -Bdrm-backend.so ${kiosk:0:22}"
+		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.2s; done; ${kiosk} ) & x=1; /usr/bin/labwc "
 		EOF
-
-	cat <<- 'EOF' > /etc/systemd/system/multiseat-kiosk@.service
-		[Unit]
-		Description=Multiseat Application Launcher
-		After=multiseat-weston@%i.service
-		BindsTo=multiseat-weston@%i.service
-
-		[Service]
-		PAMName=login
-		Environment=SEATD_VTBOUND=0
-		Environment=WAYLAND_DISPLAY=wayland-1
-		Environment=XDG_SESSION_TYPE=wayland
-		Environment=XDG_SEAT=seat_%i
-		User=u%i
-		ExecStart=/bin/sh -c "${kiosk}"
-		Restart=always
-		EOF
-
 	systemctl daemon-reload
 
 	echo -e "$wb soft linking library files from /usr/local/... to /usr/..."
@@ -308,31 +274,44 @@ case "$1" in
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
 		xorg-xwayland xcb-util-cursor || exit 40
 
+	# redo this with wlroots+labwc build requeriments and sfwbar+pcmanfm-qt
+	# download sfwbar config
+
 	useradd ${ms_dir##*/}
 	mkdir -p $ms_dir
+    $0 -g1
+    $0 -g2
+    $0 -g3
+    $0 -g4
+    ;;
+
+    "-g1") # tomlc99
 	cd $ms_dir || exit 45
-
 	echo -e "$wb git clone tomlc99 library ...."
-	git clone "http://github.com/cktan/tomlc99.git" || exit 48
+	git clone "http://github.com/cktan/tomlc99.git" || exit 46
 	mv tomlc99/libtoml.pc{.sample,}
+    ;;
 
+    "-g2") # dlm
+	cd $ms_dir || exit 45
 	echo -e "$wb git clone drm-lease-manager ...."
-	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 50
- 
-        $0 -g3
-        ;;
+	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 47
+    ;;
 
-    "-g3") 
-	echo -e "$wb preparing weston arch package file descriptor ...."
-        mkdir -p $ms_dir/weston
-	cd $ms_dir/weston
-	wget "${site[2]}PKGBUILD" || exit 55
-	echo "source+=( ${patch[@]} ); sha256sums+=( SKIP{,,} ); source[2]=\"${site[2]}\${source[2]}\"" >> PKGBUILD
-
-        echo -e "$wb Downloading weston ..."
-	chown -R ${ms_dir##*/} ../ || exit 57
-	sudo -u${ms_dir##*/} makepkg --skippgpcheck --nobuild || exit 58
+    "-g3") #wlroots
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone wlroots ...."
+	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
+	echo -e "$wb patching wlroots ...."
+	wget "https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/patch/0001-wlr-add-drm-lease-support.patch"
+	patch 0001-wlr-add-drm-lease-support.patch
 	;;
+
+    "-g4") # labwc
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone drm-lease-manager ...."
+	git clone "https://github.com/labwc/labwc" || exit 49
+    ;;
 
 
     "-b") # build
@@ -340,16 +319,17 @@ case "$1" in
 	$0 -b1
 	$0 -b2
 	$0 -b3
+	$0 -b4
 	;;
 
-    "-b1") # build
+    "-b1") # tomlc99
 	echo -e "$wb building tomlc parser ...."
 	cd $ms_dir/tomlc99/
 	make || exit 60
 	make install || exit 70
 	;;
 
-    "-b2") # build
+    "-b2") # dlm
 	echo -e "$wb building drm-lease-manager ...."
 	cd $ms_dir/drm-lease-manager
 	meson build || exit 80
@@ -357,20 +337,19 @@ case "$1" in
 	ninja -C build install || exit 100
 	;;
 
-    "-b3") # build
-	cd $ms_dir/weston
-	echo -e "$wb Removing previus weston build and source code ...."
-	rm -r pkg/ src/build/
-	echo -e "$wb Building weston ...."
-	sudo -u${ms_dir##*/} makepkg --skippgpcheck --noextract --force || exit 110 # TODO: add user keys, del --skippgpcheck
-
-	echo -e "$wb Using pacman to remove previus weston installations ...."
-	pacman -R weston --noconfirm
-        echo -e "$wb Installing weston ...."
-	pacman -U weston-*.pkg.tar.zst --noconfirm || exit 120
-	echo -e "$wb Instalation complete !!!"
+    "-b3") # wlroots
+	cd $ms_dir/wlroots
+	meson setup build/
+	ninja -C build/ || exit 90
+	ninja -C build/ install || exit 100
 	;;
 
+    "-b4") # labwc
+	cd $ms_dir/labwc
+	meson setup build/
+	ninja -C build/ || exit 90
+	ninja -C build/ install || exit 100
+	;;
 
 
 
@@ -442,7 +421,7 @@ case "$1" in
 
 	# update $conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="#	open alacritty -e /home/login.sh"
+	[[ "$cfgs" == ""  ]] && cfgs="#	open sfwbar; pcmanfm-qt --desktop"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
@@ -505,7 +484,7 @@ case "$1" in
 
 #	. $0 -Q # quit services
 	. $0 -d # start dlm-lease-manager services
-	. $0 -r # start weston seats services
+	. $0 -r # start compositor seats services
 
 	[[ "$1" == "-s" ]] && read -p " waiting to stop root session ..."
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
@@ -517,7 +496,7 @@ case "$1" in
 
     "-q" | "-Q") # quit services
 	echo -e "$ms Stopping ... "
-	systemctl stop "multiseat-weston*" "multiseat-dlm*"
+	systemctl stop "multiseat-compositor*" "multiseat-dlm*"
 	rm /var/local/run/drm-lease-manager/* >& /dev/null
 	
 	if [[ "$1" == "-q" ]] # looks better with service
@@ -551,10 +530,10 @@ case "$1" in
 	cat <<- EOF
 		 -b 		[Git clone, link and] build
 		 -c 		Create, review and enable config
-		 -s 		Start drm-lease-manager and weston services
+		 -s 		Start drm-lease-manager and compositor services
 
 		 -q 		Quit multiseat
-		 -r [LEASE]  	Restart weston seat service [with LEASE name or pos]
+		 -r [LEASE]  	Restart compositor seat service [with LEASE name or pos]
 		 -d		Start drm-lease-manager
 		 -u		Start usb owner monitor
 		 -g		Git clone repositories
