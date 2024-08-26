@@ -1,24 +1,22 @@
 # Install and run
-cd && wget https://raw.githubusercontent.com/garlett/multiseat/13.0.1/{multiseat.sh,LICENSE} && chmod 770 multiseat.sh && ./multiseat.sh -a
+cd && wget https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/{multiseat.sh,LICENSE} && chmod 770 multiseat.sh && ./multiseat.sh -a
 
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.
 
 what it does:
 - download and install pacman packages
-- download, patch and compiles tomcl, drm-lease-manger and weston
+- download, patch and compiles: tomcl, drm-lease-manger, wlroots and labwc
 - creates configuration for: keyboards, mouses and videos
 - apply kmv config on the seats
-- start weston service for each seat with non-root user
-- start weston kiosk mode and the application
+- start compositor service for each seat with non-root user
+- start compositor applications with compositor as ppid
 
 Currently using with 4 seats on nvdia gf7300 and amd R5 230
 
-RHATibnLUKUM and arson, tested on a RX550 with GL acceleration working! 
-
 ***Need help on refering this repo on multi seat tutorials.***
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
 
 # VGA adapters
 The boards that I tested, can only work with two displays at the same time: gf6200 and gf7300: VGA, DVI-I ......... AMD R5 230: VGA, HDMI, DVI-D (it has the analog pins, but they are connected to the vga);
@@ -50,7 +48,7 @@ echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DV
 # VGA over RJ45
  [This cheap adapter](https://pt.aliexpress.com/item/32813247399.html) comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/vga_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/vga_over_rj45.webp?raw=true)
 
 There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side;
 
@@ -72,7 +70,7 @@ This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC 
 
 The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 470uF_10v.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/13.0.1/docs/usb_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/usb_over_rj45.webp?raw=true)
 
 USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device, at 10 meters was:
 - 10 mV for a cheap 4-port hub;
@@ -82,7 +80,10 @@ USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device
 
 On average the USB port drops once per day because AC interference. Sometimes it requires wire replug or driver rebind.
 
-# Wireless Mouse and Keyboard
-- Krab KBKTM10 combo U$ 7.50, working at 5 meters with obstacles.
-- Satellite AK-726G combo U$ 11.00, working at 5 meters with obstacles, the mouse have a bug that lags after resume from idle and the keyborad eat characters.
+Did not tried powered usb hub, or an A to A usb cable with power supply (from old smartphone).
 
+# Wireless Mouse and Keyboard
+- Krab KBKTM10 combo  U$ 7.50, working at 5 meters with obstacles (k=AAA m=AA).
+- Mtek KM5239  combo U$ 13.00, working at 5 meters with obstacles (k=AA m=AAA+AAA).
+- Satellite AK-726G combo U$ 11.00, working at 5 meters with obstacles, the mouse have a bug that lags after resume from idle and the keyborad eat characters (k=AA m=AA).
+Those kits are recognize as "SHARKOON Technologies GmbH [Mediatrak Edge Mini keyboard]", because of this, sometimes they mispair with the dongle, maybe using only one would be recommended."

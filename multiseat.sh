@@ -304,7 +304,7 @@ case "$1" in
 	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
 	echo -e "$wb patching wlroots ...."
 	wget "https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/patch/0001-wlr-add-drm-lease-support.patch"
-	patch 0001-wlr-add-drm-lease-support.patch
+	patch -Np1 < 0001-wlr-add-drm-lease-support.patch
 	;;
 
     "-g4") # labwc
