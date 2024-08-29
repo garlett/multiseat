@@ -302,6 +302,7 @@ case "$1" in
 	cd $ms_dir || exit 45
 	echo -e "$wb git clone wlroots ...."
 	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
+	cd wlroots
 	git reset --hard
 	git checkout 0.18.0
 	echo -e "$wb patching wlroots ...."
