@@ -73,7 +73,7 @@ function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
 		IFS=$'\n'
 		for seat in $1
 		do
-			unset er kiosk
+			unset er kiosk devs
 			IFS=';'
 			for dev in $seat
 			do
@@ -84,9 +84,10 @@ function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
 				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
 
 				[[ "${dev:0:12}" != "/sys/devices" ]] && set_usb_owner u$er $dev && continue
-		
-				loginctl attach seat_$er $dev &
+
+    				devs+=" $dev"
 			done
+			loginctl attach seat_$er $devs &
 		done
 		
 		[ $((x++)) -gt 0 ] && x=0;
@@ -454,7 +455,7 @@ case "$1" in
 	cfgs="$( get_conf $2 )"
 
 	#ps -fC multiseat.sh > /dev/null ||
-	[[ "$2" == "" ]] && start_guard "$cfgs" 1.69s &
+	[[ "$2" == "" ]] && start_guard "$cfgs" 2.69s &
 
 	pos=0
 	IFS=$'\n'
