@@ -6,13 +6,13 @@ multiseat using single graphics card gpu, without nesting like xephr and others.
 
 what it does:
 - download and install pacman packages
-- download, patch and compiles: tomcl, drm-lease-manger, wlroots and labwc
+- download, patch and compiles: tomcl, drm-lease-manger, wlroots, labwc and sfwbar
 - creates configuration for: keyboards, mouses and videos
 - apply kmv config on the seats
 - start compositor service for each seat with non-root user
 - start compositor applications with compositor as ppid
 
-Currently using with 4 seats on nvdia gf7300 and amd R5 230
+Currently using with 4 seats on nvdia gf7300 and amd R5-230
 
 ***Need help on refering this repo on multi seat tutorials.***
 

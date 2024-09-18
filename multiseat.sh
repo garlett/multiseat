@@ -4,7 +4,7 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-# [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
+ [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
 
 ms_dir="/home/multiseat"
 
@@ -77,19 +77,22 @@ function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
 			IFS=';'
 			for dev in $seat
 			do
-				[[ "$dev" == "" ]] && continue
-
+				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
+				
 				[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
 
-				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
+				[[ "$dev" == "" ]] && continue
 
 				[[ "${dev:0:12}" != "/sys/devices" ]] && set_usb_owner u$er $dev && continue
 
-    				devs+=" $dev"
+				devs+=("$dev")
 			done
-			loginctl attach seat_$er $devs &
+			loginctl attach seat_$er ${devs[@]} &
 		done
-		
+
+		# temp: avoid non-seat0 vt switch
+		loginctl terminate-session $( loginctl | grep manager | grep -oE "^ +[0-9]" )
+
 		[ $((x++)) -gt 0 ] && x=0;
 		grep -q speed /proc/mdstat && \
 			for led in /sys/class/leds/input*scrolllock/brightness ;
@@ -109,7 +112,7 @@ function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 	IFS=';'
 	for dev in $1
 	do
-		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev" && continue
+		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
 
 		[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
 
@@ -129,16 +132,20 @@ function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
 
 	wait_files /var/local/run/drm-lease-manager/ "card$er card$er.lock"
 	useradd -m --badname u$er 2>/dev/null
+	mkdir -p /home/u$er/{Desktop,.conf}
+	cp /root/.config/{labwc,sfwbar} /home/u$er/.config
 	chown u$er: -R /home/u$er #|| exit 160
 	chown u$er: /var/local/run/drm-lease-manager/card$er{,.lock} || exit 190
+	
 
 	systemctl set-environment SEATD_VTBOUND=0
-	systemctl set-environment WAYLAND_DISPLAY=wayland-1
 	systemctl set-environment XDG_SESSION_TYPE=wayland
-	systemctl set-environment XDG_SEAT=seat_%i
+	systemctl set-environment XDG_SEAT=seat_$er
+	systemctl set-environment DRM_LEASE="card$er"
 	systemctl set-environment usbdvs="$usbdvs"
 	systemctl set-environment kiosk="$kiosk"
 	systemctl restart multiseat-compositor@$er.service
+	systemctl status multiseat-compositor@$er.service
 }
 
 
@@ -172,7 +179,7 @@ function get_conf(){ # $1 [ seat name || seat pos ]
 				;;
 
 			"usbd" )
-				attach+=" $( basename /sys/devices/*/*/usb2/driver/[0-9]${cfg:6} )" # attach+=" ${cfg:5}" 
+				attach+=" $( basename /sys/devices/*/*/usb[12]/driver/[0-9]${cfg:6} )" # attach+=" ${cfg:5}" 
 				;;
 
 			"spkr" )
@@ -254,7 +261,8 @@ case "$1" in
 		User=u%i
 		
 		Type=simple
-		ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-1 ] ; do sleep 0.2s; done; ${kiosk} ) & x=1; /usr/bin/labwc "
+		#ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-0 ]; do sleep .2s; done; ${kiosk} ) & :; /usr/bin/labwc -d 2> ~/x.log"
+		ExecStart=/usr/bin/labwc
 		EOF
 	systemctl daemon-reload
 
@@ -273,50 +281,19 @@ case "$1" in
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
-		xorg-xwayland xcb-util-cursor || exit 40
+		xorg-xwayland xcb-util-cursor libxml2 glib2 hwdata libdisplay-info libliftoff gtk-layer-shell || exit 40
+# pcmanfm-qt xfce4-terminal
 
 	# redo this with wlroots+labwc build requeriments and sfwbar+pcmanfm-qt
 	# download sfwbar config
 
 	useradd ${ms_dir##*/}
 	mkdir -p $ms_dir
-    $0 -g1
-    $0 -g2
-    $0 -g3
-    $0 -g4
+	$0 -g1
+	$0 -g2
+	$0 -g3
+	$0 -g4
     ;;
-
-    "-g1") # tomlc99
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone tomlc99 library ...."
-	git clone "http://github.com/cktan/tomlc99.git" || exit 46
-	mv tomlc99/libtoml.pc{.sample,}
-    ;;
-
-    "-g2") # dlm
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone drm-lease-manager ...."
-	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 47
-    ;;
-
-    "-g3") #wlroots
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone wlroots ...."
-	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
-	cd wlroots
-	git reset --hard
-	git checkout 0.18.0
-	echo -e "$wb patching wlroots ...."
-	wget "https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/patch/0001-wlr-add-drm-lease-support.patch"
-	patch -Np1 < 0001-wlr-add-drm-lease-support.patch
-	;;
-
-    "-g4") # labwc
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone drm-lease-manager ...."
-	git clone "https://github.com/labwc/labwc" || exit 49
-    ;;
-
 
     "-b") # build
 	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
@@ -326,14 +303,27 @@ case "$1" in
 	$0 -b4
 	;;
 
-    "-b1") # tomlc99
+    "-g1") # tomlc99
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone tomlc99 library ...."
+	git clone "http://github.com/cktan/tomlc99.git" || exit 46
+	mv tomlc99/libtoml.pc{.sample,}
+    ;;
+
+    "-b1") 
 	echo -e "$wb building tomlc parser ...."
 	cd $ms_dir/tomlc99/
 	make || exit 60
 	make install || exit 70
 	;;
 
-    "-b2") # dlm
+    "-g2") # dlm
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone drm-lease-manager ...."
+	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 47
+    ;;
+
+    "-b2") 
 	echo -e "$wb building drm-lease-manager ...."
 	cd $ms_dir/drm-lease-manager
 	meson build || exit 80
@@ -341,15 +331,50 @@ case "$1" in
 	ninja -C build install || exit 100
 	;;
 
-    "-b3") # wlroots
+    "-g3") #wlroots
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone wlroots ...."
+	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
+	cd wlroots
+	git reset --hard
+	git checkout 0.18.0
+	echo -e "$wb patching wlroots ...."
+	git remote add -f b https://gitlab.freedesktop.org/garlett/wlroots-lease-multiseat
+	git remote update
+	git diff master remotes/b/master > 0001-wlr-add-drm-lease-support.patch
+	patch -Np1 < 0001-wlr-add-drm-lease-support.patch
+	;;
+
+    "-b3") 
 	cd $ms_dir/wlroots
 	meson setup build/
 	ninja -C build/ || exit 90
 	ninja -C build/ install || exit 100
 	;;
 
-    "-b4") # labwc
+    "-g4") # labwc
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone labwc ...."
+	git clone "https://github.com/labwc/labwc" || exit 49
+	ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/ 
+	 ;;
+
+    "-b4")
 	cd $ms_dir/labwc
+	meson setup build/
+	ninja -C build/ || exit 90
+	ninja -C build/ install || exit 100
+	;;
+
+
+    "-g5") # labwc
+	cd $ms_dir || exit 45
+	echo -e "$wb git clone sfwbar ...."
+	git clone "https://github.com/LBCrion/sfwbar" || exit 49
+	;;
+
+    "-b5")
+	cd $ms_dir/sfwbar
 	meson setup build/
 	ninja -C build/ || exit 90
 	ninja -C build/ install || exit 100
