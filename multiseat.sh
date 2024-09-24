@@ -11,6 +11,7 @@ ms_dir="/home/multiseat"
 wait_time=0.1s	# time between exist checks 
 
 
+#echo echo$((e++)) >&2
 
 
 if [ "$EUID" -ne 0 ]
@@ -24,6 +25,7 @@ white="\e[0m"
 wb="$red[MultiSeat Builder]$white"
 ms="$red[MultiSeat]$white"
 oIFS=$IFS
+isnumber='^[0-9]+$'
 
 shopt -s nullglob
 
@@ -49,161 +51,130 @@ do
 	wait_files /sys/class/drm/ card$((--vga_count))
 done
 
-# config file based on current hardware path configuration
-conf=$( echo /sys/devices/pci*/*/*/drm/card*/card* /sys/devices/pci*/*/drm/card*/card* )
-[[ "$conf" != "" ]] && conf=/etc/multiseat_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
+# config file name based on current hardware path configuration
+conf=$( echo /sys/devices/pci*/*/{,*/}drm/card*/card* )
+[[ "$conf" != "" ]] && conf=/etc/multiseat/_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
+
 [[ "$conf" != "" ]] && ln -sf $conf /tmp/multiseat.conf
 ! [ -e "$conf" ] && [[ "-S" == "$1" ]] && ( echo -e "$ms Config '$conf' not found!"; systemctl start getty@tty1.service ; killall multiseat.sh )
 
 
 
 
-function set_usb_owner() { #  $1 user        $2 2-1.3
-	usbdev=$( grep -h "DEVNAME=.*$" /sys/devices/*/*/usb2/driver/$2/uevent | head -n 1 )
-	[[ "$usbdev" != "" ]] && chown $1 /dev/${usbdev/"DEVNAME="/} # /dev/bus/usb/002/003
-} # qemu: add_device $server/seat_$1/qemu_qmp.socket
+function start_seat2(){  # $1 lease    $2 user
+	echo -e "$ms start_seat: lease '$1'  user '$2'"
+	
+	[[ "$2" == "" ]] && user=${1/card/u} || user=$2
+	user=${user,,}
+	if [ ! -d /home/$user/ ] && [[ "$2" != "guest" ]]
+	then
+		useradd $user
+		mkdir -p /home/$user/{Desktop,.config}
+		ln -s /etc/multiseat/labwc/ /home/$user/.config/
+		ln -s /etc/multiseat/sfwbar/ /home/$user/.config/
+		chown $user: -R /home/$user
+	fi
+	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock"
+	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 190
+
+	systemctl set-environment SEATD_VTBOUND=0
+	systemctl set-environment XDG_SESSION_TYPE=wayland
+	systemctl set-environment XKB_DEFAULT_LAYOUT=br
+	systemctl set-environment XDG_SEAT=seat-$1
+	systemctl set-environment DRM_LEASE=$1
+	systemctl set-environment usbdvs="$( get_conf2 usbd $1 )"
+	systemctl set-environment open="$( [[ "$2" != 'guest' ]] && get_conf2 open $1 \
+		|| echo 'xfce4-terminal --fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e /home/login.sh'  )"
+	systemctl restart multiseat-compositor@$user.service
+}
 
 
-function start_guard(){ # "$0-VGA-1;dev1;dev2... \n seat;....  "
 
-	echo -e "$ms Starting seat guard ... "
+
+function get_conf2(){ #  $1 field    $2 card || seat pos ] || ""
+
+	 # load cfgs, remove comments, append EOF delimeter
+	cfgs=$( sed -e "s/#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" /tmp/multiseat.conf )$'\n'cardcard
+
+	# return cards list
+	[[ "$1" == "card" ]] && [[ "$2" == "" ]] && echo -e "$cfgs" | grep "^card[0-9]" 
+
+	[[ "$2" == "" ]] && return
+	
+	# convert pos to card name
+	[[ "$2" =~ $isnumber ]] && card=$( echo -e "$cfgs" | grep -m$2 "^card" | tail -n1 ) || card="card${2/card/}"
+
+	# select card configs
+	card_cfgs=$( echo  "$cfgs" | grep -Pzo "(?s)\Q$card\E.*?(?=\Qcard\E)" | tr -d '\0' )
+
+	IFS=$'\n'
+	for cfg in $card_cfgs
+	do
+		case ${cfg:0:4} in
+
+			"ps2k" | "ps2m")
+				[[ $1 == "devs" ]] && echo /sys/devices/platform/*/${cfg:5}/input/input*
+				;;
+
+			"usbm" | "usbk")
+				[[ $1 == "devs" ]] && echo /sys/devices/pci*/*/usb[12]/driver/[0-9]${cfg:6}/*/*/input/input*
+				;; # path set to usb2 istead of usb*   # after usb: driver or * ?
+			
+			"usbd")
+				[[ $1 == "usbd" ]] && ( basename /sys/devices/*/*/usb[12]/driver/[0-9]${cfg:6} || echo "'$card' usb '$cfg' not found" >&2 )
+				;;
+			
+			"open")
+				[[ $1 == "open" ]] && echo ${cfg:5}
+				;;
+			
+			"spkr")
+				[[ $1 == "spkr" ]] && echo /sys/devices/pci*/*/sound/card${cfg:5}
+				;;
+				
+			"card")
+				[[ $1 == "card" ]] && echo $cfg
+				;;
+		esac
+	done
+	return 0
+}
+
+
+function start_guard2(){
+	echo -e "$ms Starting seat guard ($1) ... "
+	
 	while : ;
 	do
-		IFS=$'\n'
-		for seat in $1
+		for card in $( get_conf2 card )
 		do
-			unset er kiosk devs
-			IFS=';'
-			for dev in $seat
+			loginctl attach seat-$card /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
+			
+			user=$( loginctl | grep $card | xargs | cut -d " " -f 3 )
+			[[ "$user" == "" ]] && echo "$card $usb" >> /tmp/usb_fail.log && continue # user=${1,,}
+			
+			for usb in $( get_conf2 usbd $card )
 			do
-				[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
-				
-				[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
-
-				[[ "$dev" == "" ]] && continue
-
-				[[ "${dev:0:12}" != "/sys/devices" ]] && set_usb_owner u$er $dev && continue
-
-				devs+=("$dev")
+				usbdev=$( grep -h "DEVNAME=.*$" /sys/devices/*/*/usb2/driver/$usb/uevent | head -n 1 )
+				[[ "$usbdev" != "" ]] && chown $user /dev/${usbdev/"DEVNAME="/} # /dev/bus/usb/002/003
 			done
-			loginctl attach seat_$er ${devs[@]} &
 		done
 
-		# temp: avoid non-seat0 vt switch
-		loginctl terminate-session $( loginctl | grep manager | grep -oE "^ +[0-9]" )
+		# temp: avoid non-seat0 vt switch, because of recent loginctl/systemd versions
+		s="$( loginctl | grep manager | grep -oE "^ +[0-9]" )"
+ 		[[ "$s" =~ $isnumber ]] && loginctl terminate-session $s
 
+		# raid keyboard status
 		[ $((x++)) -gt 0 ] && x=0;
 		grep -q speed /proc/mdstat && \
 			for led in /sys/class/leds/input*scrolllock/brightness ;
 			do
 				echo $x > $led ;
 			done
-		sleep $2
-	done
-	IFS=$oIFS
-}
-
-
-function start_seat(){  # /sys/card;kiosk;/sys/dev1;/sys/dev2;2-1.6=usb
-
-	echo -e "$ms start_seat $3 $2 $1"
-	unset er kiosk usbdvs
-	IFS=';'
-	for dev in $1
-	do
-		[[ "$er" != "" ]] && [[ "$kiosk" == "" ]] && kiosk="$dev " && continue
-
-		[[ "$er" == "" ]] && er=$( basename $dev ) && er=${er/card/}
-
-		[[ "${dev:0:12}" != "/sys/devices" ]] && usbdvs+=" $dev" && continue
-		
-		[[ "$2" != "" ]] && [[ "$2" != "$3" ]] && [[ "$2" != "$er" ]] && echo -e "$ms ignoring seat $3 " && return
-		
-		count=29 # timeout * $wait_time
-		while [[ $( loginctl --no-pager seat-status seat_$er 2> /dev/null ) != *$( basename $dev )* ]]
-		do
-			sleep $wait_time
-			[ $((count--)) -lt 0 ] && echo -e "$ms [warn] seat_$er does not have: $( basename $dev )" && break
-		done
-		
-	done
-	IFS=$oIFS
-
-	wait_files /var/local/run/drm-lease-manager/ "card$er card$er.lock"
-	useradd -m --badname u$er 2>/dev/null
-	mkdir -p /home/u$er/{Desktop,.conf}
-	cp /root/.config/{labwc,sfwbar} /home/u$er/.config
-	chown u$er: -R /home/u$er #|| exit 160
-	chown u$er: /var/local/run/drm-lease-manager/card$er{,.lock} || exit 190
-	
-
-	systemctl set-environment SEATD_VTBOUND=0
-	systemctl set-environment XDG_SESSION_TYPE=wayland
-	systemctl set-environment XDG_SEAT=seat_$er
-	systemctl set-environment DRM_LEASE="card$er"
-	systemctl set-environment usbdvs="$usbdvs"
-	systemctl set-environment kiosk="$kiosk"
-	systemctl restart multiseat-compositor@$er.service
-	systemctl status multiseat-compositor@$er.service
-}
-
-
-
-
-function get_conf(){ # $1 [ seat name || seat pos ]
-
-	unset attach lease kiosk usbd guard seats
-        cfgs=$( cat $conf 2> /dev/null )
-	cfgs=$( echo -e "$cfgs" | sed -e "s/#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" ) # remove comments
-	pos=0
-
-	oIFS=$IFS
-	IFS=$'\n'
-	for cfg in $cfgs eof
-	do
-		IFS=$oIFS
-		case ${cfg:0:4} in
-
-			"ps2k" | "ps2m" )
-				attach+=" $( echo /sys/devices/platform/*/${cfg:5}/input/input* )"
-				;;
-
-
-			"usbm" | "usbk" )
-				attach+=" $( echo /sys/devices/pci*/*/usb2/driver/[0-9]${cfg:6}/*/*/input/input* )"
-				;; # path set to usb2 istead of usb*   # after usb: driver or * ?
-
-			"open" )
-				kiosk="${cfg:5}"
-				;;
-
-			"usbd" )
-				attach+=" $( basename /sys/devices/*/*/usb[12]/driver/[0-9]${cfg:6} )" # attach+=" ${cfg:5}" 
-				;;
-
-			"spkr" )
-				attach+=" $( echo /sys/devices/pci*/*/sound/card${cfg:5} )"
-				;;
-
-			"card" | "eof" )
-
-				if [[ "$lease" != "" ]]
-				then
-					if [[ "$2" == "" ]] || [[ "$2" == "$lease" ]] || [[ "$2" == "$pos" ]]
-					then
-						echo "$( echo /sys/devices/pci*/*/{,*/}drm/card*/card$lease );$kiosk${attach// /;}"
-					fi
-					pos=$((pos+1))
-				fi
-				lease=${cfg//card/}
-				unset attach kiosk
-				;;
-		esac
-		
+		sleep $1
 	done
 }
-
 
 
 # reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
@@ -223,6 +194,16 @@ case "$1" in
 	echo -e "$wb creating systemctl services ...."
 	ms_path=$( cd $( dirname $0 ) && pwd )/$( basename $0 )
 
+	cat <<- EOF > /etc/systemd/system/multiseat-dlm@.service
+		[Unit]
+		Description=Drm Lease Manager
+		After=systemd-user-sessions.service
+
+		[Service]
+		#Type=forking notify Group=video UMask=0007
+		ExecStart=/usr/local/bin/drm-lease-manager %I
+		EOF
+
 	cat <<- EOF > /etc/systemd/system/multiseat.service
 		[Unit]
 		Description=MultiSeat Starter
@@ -241,16 +222,6 @@ case "$1" in
 		WantedBy=multi-user.target
 		EOF
 
-	cat <<- EOF > /etc/systemd/system/multiseat-dlm@.service
-		[Unit]
-		Description=Drm Lease Manager
-		After=systemd-user-sessions.service
-
-		[Service]
-		#Type=forking notify Group=video UMask=0007
-		ExecStart=/usr/local/bin/drm-lease-manager %I
-		EOF
-
 	cat <<- 'EOF' > /etc/systemd/system/multiseat-compositor@.service
 		[Unit]
 		Description=Multiseat Compositor Launcher
@@ -258,21 +229,31 @@ case "$1" in
 
 		[Service]
 		PAMName=login
-		User=u%i
+		User=%i
 		
 		Type=simple
-		#ExecStart=/bin/sh -c "( while [ -v kiosk ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-0 ]; do sleep .2s; done; ${kiosk} ) & :; /usr/bin/labwc -d 2> ~/x.log"
-		ExecStart=/usr/bin/labwc
+		#ExecStart=/bin/sh -c "( while [ -v open ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-0 ]; do sleep .2s; done; ${open} ) & :; /usr/bin/labwc"
+		#ExecStart=/usr/local/bin/labwc
+		#ExecStart=/bin/sh -c "exec /usr/local/bin/labwc $( [ -v open ] && echo '-e' ) ${open}"
+		ExecStart=/bin/sh -c "exec /usr/local/bin/labwc"
+		
 		EOF
 	systemctl daemon-reload
 
 	echo -e "$wb soft linking library files from /usr/local/... to /usr/..."
 	cd /usr/
 	mkdir -p include/libdlmclient local/lib/pkgconfig 
-	for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so.0,libtoml.so}
+	for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so.0,libtoml.so,libwlroots-0.18.so}
 	do
 		! [ -e $file ] && ( ln -s /usr/local/$file $( dirname $file ) || exit 30 )
 	done
+	
+	echo -e "$wb creating guest and build+cfg directories ..."
+	useradd guest
+	useradd ${ms_dir##*/}
+	mkdir -p $ms_dir
+	mkdir -m 2750 /etc/multiseat
+	chown -R :users /etc/multiseat
 	;;
 
 
@@ -281,18 +262,17 @@ case "$1" in
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
-		xorg-xwayland xcb-util-cursor libxml2 glib2 hwdata libdisplay-info libliftoff gtk-layer-shell || exit 40
-# pcmanfm-qt xfce4-terminal
+		xorg-xwayland xcb-util-cursor libxml2 glib2 hwdata libdisplay-info libliftoff gtk-layer-shell \
+		pcmanfm-qt xfce4-terminal || exit 40
 
-	# redo this with wlroots+labwc build requeriments and sfwbar+pcmanfm-qt
-	# download sfwbar config
+	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt
+	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
 
-	useradd ${ms_dir##*/}
-	mkdir -p $ms_dir
 	$0 -g1
 	$0 -g2
 	$0 -g3
 	$0 -g4
+	$0 -g5
     ;;
 
     "-b") # build
@@ -301,6 +281,7 @@ case "$1" in
 	$0 -b2
 	$0 -b3
 	$0 -b4
+	$0 -b5
 	;;
 
     "-g1") # tomlc99
@@ -312,7 +293,8 @@ case "$1" in
 
     "-b1") 
 	echo -e "$wb building tomlc parser ...."
-	cd $ms_dir/tomlc99/
+	cd $ms_dir/tomlc99/ || exit 60
+	rm -R build/
 	make || exit 60
 	make install || exit 70
 	;;
@@ -325,7 +307,8 @@ case "$1" in
 
     "-b2") 
 	echo -e "$wb building drm-lease-manager ...."
-	cd $ms_dir/drm-lease-manager
+	cd $ms_dir/drm-lease-manager || exit 80
+	rm -R build/
 	meson build || exit 80
 	ninja -C build || exit 90
 	ninja -C build install || exit 100
@@ -346,7 +329,8 @@ case "$1" in
 	;;
 
     "-b3") 
-	cd $ms_dir/wlroots
+	cd $ms_dir/wlroots || exit 90
+	rm -R build/
 	meson setup build/
 	ninja -C build/ || exit 90
 	ninja -C build/ install || exit 100
@@ -356,21 +340,26 @@ case "$1" in
 	cd $ms_dir || exit 45
 	echo -e "$wb git clone labwc ...."
 	git clone "https://github.com/labwc/labwc" || exit 49
-	ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/ 
-	 ;;
+	ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/
+	echo -e 'sfwbar > /dev/null 2>&1 &\npcmanfm-qt --desktop > 2>&1 &' > /etc/multiseat/labwc/autostart
+	;;
 
     "-b4")
-	cd $ms_dir/labwc
+	cd $ms_dir/labwc || exit 90
+	rm -R build/
 	meson setup build/
 	ninja -C build/ || exit 90
 	ninja -C build/ install || exit 100
 	;;
 
 
-    "-g5") # labwc
+    "-g5") # sfwbar
 	cd $ms_dir || exit 45
 	echo -e "$wb git clone sfwbar ...."
 	git clone "https://github.com/LBCrion/sfwbar" || exit 49
+	cd /etc/multiseat/sfwbar
+	wget https://raw.githubusercontent.com/LBCrion/sfwbar/refs/heads/main/config/{battery-svg.widget,startmenu.source,startmenu.widget,winops.widget}
+	wget https://github.com/garlett/multiseat/blob/wlroots-0.18/cfg/sfwbar.config
 	;;
 
     "-b5")
@@ -450,7 +439,7 @@ case "$1" in
 
 	# update $conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="#	open sfwbar; pcmanfm-qt --desktop"
+	[[ "$cfgs" == ""  ]] && cfgs="#	open firefox"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
@@ -468,35 +457,6 @@ case "$1" in
 	;;
 
 
-
-    "-r") # read config and start_seat     $2 seat name or pos
-	
-	# set "master-of-seat" on input devices
-        sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"$/&, TAG+="master-of-seat"/' \
-	        /usr/lib/udev/rules.d/71-seat.rules || exit 140
-	udevadm control --reload && udevadm trigger || exit 150
-
-
-	cfgs="$( get_conf $2 )"
-
-	#ps -fC multiseat.sh > /dev/null ||
-	[[ "$2" == "" ]] && start_guard "$cfgs" 2.69s &
-
-	pos=0
-	IFS=$'\n'
-	for seat in $cfgs
-	do
-		start_seat "$seat" "$2" $pos &
-		seats+="$! "
-		pos=$(( pos+1 ))
-	done
-	IFS=$oIFS
-	[[ "$seats" != "" ]] && wait $seats
-
-	;;
-
-
-
     "-d") # dlm service
 	
 	echo -e "$ms Starting drm-lease-manager services ... "	
@@ -509,11 +469,30 @@ case "$1" in
 	;;
 
 
+
+    "-r") # read config and start_seat     $2 seat name or pos    $3 user name
+	# set "master-of-seat" on input devices
+        sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"$/&, TAG+="master-of-seat"/' \
+	        /usr/lib/udev/rules.d/71-seat.rules || exit 140
+	udevadm control --reload && udevadm trigger || exit 150
+
+	for card in $( get_conf2 card $2 )
+	do
+		sleep 4s
+		start_seat2 "$card" "$3" # & threads only working with libdrm <= 2.4.121-1  or lib-display-info < 2.0 ????
+		seats+="$! "
+	done
+	[[ "$seats" != "" ]] && wait $seats
+
+	;;
+
+
+
     "-s" | "-S") # start services
 
-#	. $0 -Q # quit services
-	. $0 -d # start dlm-lease-manager services
-	. $0 -r # start compositor seats services
+	[[ $2 == "" ]] && start_guard2 2.69s &
+	. $0 -d 		# start dlm-lease-manager services
+	. $0 -r #"" "guest" 	# start compositor seats services
 
 	[[ "$1" == "-s" ]] && read -p " waiting to stop root session ..."
 	O=$(loginctl | grep root) && loginctl kill-session ${O:0:7}
