@@ -258,7 +258,7 @@ case "$1" in
 	;;
 
 
-    "-g") # git clones
+    "-gp") # git clones
 	echo -e "$wb installing required packages ...."
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
@@ -273,10 +273,17 @@ case "$1" in
 
     "-g" | "-b") # $2 app index
 
-#	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
-#
-#	if [[ "$2" == "" ]] then for i in {0..4} do $0 $1 $i done exit
-#
+	if [[ "$2" == "" ]]
+	then 
+		for i in {0..5} 
+		do 
+			$0 $1 $i 
+		done 
+		exit
+	fi
+
+	[ -d $ms_dir ] || ( $0 -l ; $0 -gp ) # links and pacman
+
 	cd $ms_dir || exit 50
 
 	href=( 'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' 'github.com/LBCrion/sfwbar' \
