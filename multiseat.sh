@@ -4,12 +4,13 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
- [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
+# [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
 
 ms_dir="/home/multiseat"
 
 wait_time=0.1s	# time between exist checks 
 
+guest_login_cmd="xfce4-terminal --fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e /home/login.sh"
 
 #echo echo$((e++)) >&2
 
@@ -17,7 +18,7 @@ wait_time=0.1s	# time between exist checks
 if [ "$EUID" -ne 0 ]
 then 
 	echo -e "$wb Please run this as root"
-	exit
+	exit 10
 fi
 
 red="\e[1;31m"
@@ -63,30 +64,31 @@ conf=${conf//card/}
 
 
 function start_seat2(){  # $1 lease    $2 user
-	echo -e "$ms start_seat: lease '$1'  user '$2'"
 	
+	old_user=$( loginctl | grep $1 | xargs | cut -d " " -f 3 )
 	[[ "$2" == "" ]] && user=${1/card/u} || user=$2
 	user=${user,,}
-	if [ ! -d /home/$user/ ] && [[ "$2" != "guest" ]]
+	if [ ! -d /home/$user/ ] && [[ "$user" != "guest" ]]
 	then
 		useradd $user
 		mkdir -p /home/$user/{Desktop,.config}
 		ln -s /etc/multiseat/labwc/ /home/$user/.config/
-		ln -s /etc/multiseat/sfwbar/ /home/$user/.config/
 		chown $user: -R /home/$user
 	fi
 	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock"
-	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 190
+	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
 
+	echo -e "$ms start_seat: lease '$1'  arg '$2' user '$user'"
 	systemctl set-environment SEATD_VTBOUND=0
 	systemctl set-environment XDG_SESSION_TYPE=wayland
 	systemctl set-environment XKB_DEFAULT_LAYOUT=br
 	systemctl set-environment XDG_SEAT=seat-$1
 	systemctl set-environment DRM_LEASE=$1
 	systemctl set-environment usbdvs="$( get_conf2 usbd $1 )"
-	systemctl set-environment open="$( [[ "$2" != 'guest' ]] && get_conf2 open $1 \
-		|| echo 'xfce4-terminal --fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e /home/login.sh'  )"
-	systemctl restart multiseat-compositor@$user.service
+	systemctl set-environment open="$( [[ $user != 'guest' ]] && get_conf2 open $1 || echo "$guest_login_cmd" )"
+
+	[[ "$old_user" != "" ]] &&	systemctl stop  multiseat-compositor@$old_user.service
+					systemctl start multiseat-compositor@$user.service
 }
 
 
@@ -234,10 +236,9 @@ case "$1" in
 		Type=simple
 		#ExecStart=/bin/sh -c "( while [ -v open ] && ! [ -e ${XDG_RUNTIME_DIR}/wayland-0 ]; do sleep .2s; done; ${open} ) & :; /usr/bin/labwc"
 		#ExecStart=/usr/local/bin/labwc
-		#ExecStart=/bin/sh -c "exec /usr/local/bin/labwc $( [ -v open ] && echo '-e' ) ${open}"
-		ExecStart=/bin/sh -c "exec /usr/local/bin/labwc"
-		
+		ExecStart=/bin/sh -c "exec /usr/local/bin/labwc -s '${open}'"
 		EOF
+		
 	systemctl daemon-reload
 
 	echo -e "$wb soft linking library files from /usr/local/... to /usr/..."
@@ -250,7 +251,7 @@ case "$1" in
 	
 	echo -e "$wb creating guest and build+cfg directories ..."
 	useradd guest
-	useradd ${ms_dir##*/}
+	#useradd ${ms_dir##*/}
 	mkdir -p $ms_dir
 	mkdir -m 2750 /etc/multiseat
 	chown -R :users /etc/multiseat
@@ -263,122 +264,81 @@ case "$1" in
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
 		xorg-xwayland xcb-util-cursor libxml2 glib2 hwdata libdisplay-info libliftoff gtk-layer-shell \
-		pcmanfm-qt xfce4-terminal || exit 40
+		pcmanfm-qt xfce4-terminal swayidle || exit 40
 
 	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt
 	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
-
-	$0 -g1
-	$0 -g2
-	$0 -g3
-	$0 -g4
-	$0 -g5
     ;;
 
-    "-b") # build
-	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
-	$0 -b1
-	$0 -b2
-	$0 -b3
-	$0 -b4
-	$0 -b5
+
+    "-g" | "-b") # $2 app index
+
+#	[ -d $ms_dir ] || ( $0 -l ; $0 -g ) # links and git clones 
+#
+#	if [[ "$2" == "" ]] then for i in {0..4} do $0 $1 $i done exit
+#
+	cd $ms_dir || exit 50
+
+	href=( 'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' 'github.com/LBCrion/sfwbar' \
+		'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' 'git.sr.ht/~leon_plickat/wlopm' )
+
+	name=$( basename ${href[$2]} )
+	if ! cd $name/ 
+	then
+		echo -e "$wb git clone $name ...."
+		git clone "https://${href[$2]}" || exit 60
+		cd $name
+
+		branch=( '0.18.0' )
+		if [[ "${branch[$2]}" != "" ]]
+		then
+			echo -e "$wb selecting branch ${branch[$2]} ...."
+			git checkout ${branch[$2]}
+		fi
+		
+		git reset --hard
+	
+		patch_href=( 'gitlab.freedesktop.org/garlett/wlroots-lease-multiseat' )
+		if [[ "${patch_href[$2]}" != "" ]]
+		then
+			echo -e "$wb patching with $( basename ${patch_href[$2]} ) ...."
+			git remote add -f b "https://${patch_href[$2]}.git"
+			git remote update
+			git diff master remotes/b/master > multiseat.patch
+			patch -Np1 < multiseat.patch
+		fi
+
+	       	[[ "$name" == "tomlc99" ]] && mv libtoml.pc{.sample,}
+		[[ "$name" == "labwc" ]] && ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/ && \
+		 	cat <<- 'EOF' > /etc/multiseat/labwc/autostart
+			sfwbar > /dev/null 2>&1 &
+			pcmanfm-qt --desktop > /dev/null 2>&1 &
+			swayidle -w timeout 420 "wlopm --off \*" resume "wlopm --on \*" > /dev/null 2>&1 &
+			EOF
+	fi
+
+	
+	if [[ "$1" == "-b" ]]
+	then
+		echo -e "$wb compiling $name ...."
+
+		if [ -e Makefile  ]
+		then
+			make --always-make || exit 70
+			make install || exit 80
+		fi
+
+		if [ -e meson.build ]
+		then
+			[ -e build/ ] && rm -R build/
+			meson build || exit 70
+			ninja -C build || exit 80
+			ninja -C build install || exit 90
+		fi
+	fi
+	chmod 755 -R .
 	;;
 
-    "-g1") # tomlc99
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone tomlc99 library ...."
-	git clone "http://github.com/cktan/tomlc99.git" || exit 46
-	mv tomlc99/libtoml.pc{.sample,}
-    ;;
-
-    "-b1") 
-	echo -e "$wb building tomlc parser ...."
-	cd $ms_dir/tomlc99/ || exit 60
-	rm -R build/
-	make || exit 60
-	make install || exit 70
-	;;
-
-    "-g2") # dlm
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone drm-lease-manager ...."
-	git clone "https://gerrit.automotivelinux.org/gerrit/src/drm-lease-manager.git" || exit 47
-    ;;
-
-    "-b2") 
-	echo -e "$wb building drm-lease-manager ...."
-	cd $ms_dir/drm-lease-manager || exit 80
-	rm -R build/
-	meson build || exit 80
-	ninja -C build || exit 90
-	ninja -C build install || exit 100
-	;;
-
-    "-g3") #wlroots
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone wlroots ...."
-	git clone https://gitlab.freedesktop.org/wlroots/wlroots || exit 48
-	cd wlroots
-	git reset --hard
-	git checkout 0.18.0
-	echo -e "$wb patching wlroots ...."
-	git remote add -f b https://gitlab.freedesktop.org/garlett/wlroots-lease-multiseat
-	git remote update
-	git diff master remotes/b/master > 0001-wlr-add-drm-lease-support.patch
-	patch -Np1 < 0001-wlr-add-drm-lease-support.patch
-	;;
-
-    "-b3") 
-	cd $ms_dir/wlroots || exit 90
-	rm -R build/
-	meson setup build/
-	ninja -C build/ || exit 90
-	ninja -C build/ install || exit 100
-	;;
-
-    "-g4") # labwc
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone labwc ...."
-	git clone "https://github.com/labwc/labwc" || exit 49
-	ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/
-	echo -e 'sfwbar > /dev/null 2>&1 &\npcmanfm-qt --desktop > 2>&1 &' > /etc/multiseat/labwc/autostart
-	;;
-
-    "-b4")
-	cd $ms_dir/labwc || exit 90
-	rm -R build/
-	meson setup build/
-	ninja -C build/ || exit 90
-	ninja -C build/ install || exit 100
-	;;
-
-
-    "-g5") # sfwbar
-	cd $ms_dir || exit 45
-	echo -e "$wb git clone sfwbar ...."
-	git clone "https://github.com/LBCrion/sfwbar" || exit 49
-	cd /etc/multiseat/sfwbar
-	wget https://raw.githubusercontent.com/LBCrion/sfwbar/refs/heads/main/config/{battery-svg.widget,startmenu.source,startmenu.widget,winops.widget}
-	wget https://github.com/garlett/multiseat/blob/wlroots-0.18/cfg/sfwbar.config
-	;;
-
-    "-b5")
-	cd $ms_dir/sfwbar
-	meson setup build/
-	ninja -C build/ || exit 90
-	ninja -C build/ install || exit 100
-	;;
-
-
-
-    "-f") # disable config
-	echo -e "$ms Flushing seats ...."
-	while [ $( loginctl list-seats | wc -l ) -gt 4 ]
-	do
-		loginctl flush-devices
-	done
-	echo -e "$ms Flushed."
-	;;
 
 
     "-c" | "-C" ) # update config file
@@ -439,7 +399,7 @@ case "$1" in
 
 	# update $conf with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="#	open firefox"
+	[[ "$cfgs" == ""  ]] && cfgs="#	open $guest_login_cmd"
 
 	p=0 # create config for new devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
@@ -457,13 +417,23 @@ case "$1" in
 	;;
 
 
+    "-f") # disable config
+	echo -e "$ms Flushing seats ...."
+	while [ $( loginctl list-seats | wc -l ) -gt 4 ]
+	do
+		loginctl flush-devices
+	done
+	echo -e "$ms Flushed."
+	;;
+
+
     "-d") # dlm service
 	
 	echo -e "$ms Starting drm-lease-manager services ... "	
 	
 	wait_files "/dev/dri/" "$( grep "^card[0-9]" $conf -o )"  # wait configured cards
 
-	systemctl start `systemd-escape --template=multiseat-dlm@.service /dev/dri/card*` || exit 180 # udev ?
+	systemctl start `systemd-escape --template=multiseat-dlm@.service /dev/dri/card*` || exit 100 # udev ?
 
 	wait_files "/var/local/run/drm-lease-manager/" "$( grep "^card*" $conf )" # wait configured crtcs 
 	;;
@@ -473,8 +443,8 @@ case "$1" in
     "-r") # read config and start_seat     $2 seat name or pos    $3 user name
 	# set "master-of-seat" on input devices
         sed -i 's/SUBSYSTEM=="input", KERNEL=="input\*", TAG+="seat"$/&, TAG+="master-of-seat"/' \
-	        /usr/lib/udev/rules.d/71-seat.rules || exit 140
-	udevadm control --reload && udevadm trigger || exit 150
+	        /usr/lib/udev/rules.d/71-seat.rules || exit 110
+	udevadm control --reload && udevadm trigger || exit 120
 
 	for card in $( get_conf2 card $2 )
 	do
@@ -518,7 +488,6 @@ case "$1" in
 		deallocvt
 		echo -ne '\007' > /dev/tty6
 	fi
-
 	;;
 
 
