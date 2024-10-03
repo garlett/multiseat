@@ -23,7 +23,7 @@ The boards that I tested, can only work with two displays at the same time: gf62
 
 I guess that intermediary boards could accept 3 outputs and high end boards 4 or more.
 
-[Sparkle Intel Arc A310 ELF](https://www.amazon.com/dp/B0CHN9R4P2?tag=pcpapi-20&linkCode=ogi&th=1) and [Asus GT710](https://pcpartpicker.com/product/P2CFf7/asus-geforce-gt-710-2-gb-video-card-gt710-4h-sl-2gd5) should take 4 displays.
+[Sparkle Intel Arc A310 ELF](https://www.amazon.com/dp/B0CHN9R4P2?tag=pcpapi-20&linkCode=ogi&th=1) and [Asus GT710](https://pcpartpicker.com/product/P2CFf7/asus-geforce-gt-710-2-gb-video-card-gt710-4h-sl-2gd5) should take 4 displays. ? RX {570,580,590} ?
 
 Did not tested usb(3) to vga or hdmi (probably does not require drm lease)
 
