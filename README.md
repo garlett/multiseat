@@ -60,9 +60,14 @@ Because power drop in the "9 metres of hmdi cable", the adapter only returns mon
 But if you have hdmi monitors, you could use only the cable, or "Laranja Pi Zero 3" could be another alternative ( headless weston with spice, then the SBC connects to the server ).
 
 
+# USB 10 meter cable
+The [cable](https://shopee.com.br/Cabo-Extensor-10-Metros-Usb-2.0-Ultra-Rapido-Ativo-Amplificado-Macho-F%C3%AAmea-Enivo-Rapido-i.296745639.23091334073) bellow works well with keyboard, mouse and smartcard reader
+
+![USB 10 meter cable](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/usb-10meter-cable.webp?raw=true)
 
 
-# USB over RJ45 extender
+
+# USB over RJ45 extender (not recommended)
 
 This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC (cjs1037a) at each side that amplifies data lines. 
 
@@ -80,9 +85,9 @@ USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device
 
 On average the USB port drops once per day because AC interference. Sometimes it requires wire replug or driver rebind.
 
-Did not tried powered usb hub, or an A to A usb cable with power supply (from old smartphone).
+Injecting 5v (from old smartphone power supply with A to A usb cable) does not improve stability, so, powered usb hub may yeld the same results.
 
-# Wireless Mouse and Keyboard
+# Wireless Mouse and Keyboard (not recommended)
 - Krab KBKTM10 combo  U$ 7.50, working at 5 meters with obstacles (k=AAA m=AA).
 - Mtek KM5239  combo U$ 13.00, working at 5 meters with obstacles (k=AA m=AAA+AAA).
 - Satellite AK-726G combo U$ 11.00, working at 5 meters with obstacles, the mouse have a bug that lags after resume from idle and the keyborad eat characters (k=AA m=AA).
