@@ -1,0 +1,158 @@
+diff --git a/backend/session/session.c b/backend/session/session.c
+index dcf07c70..c4fde1a4 100644
+--- a/backend/session/session.c
++++ b/backend/session/session.c
+@@ -18,6 +18,7 @@
+ #include "util/time.h"
+ 
+ #include <libseat.h>
++#include <dlmclient.h>
+ 
+ #define WAIT_GPU_TIMEOUT 10000 // ms
+ 
+@@ -332,37 +333,44 @@ struct wlr_device *wlr_session_open_file(struct wlr_session *session,
+ 		return NULL;
+ 	}
+ 
++	struct wlr_device *wlr_dev = wlr_fd_to_device(session, fd);
++	if (wlr_dev){
++		wlr_dev->device_id = device_id;
++		return wlr_dev;
++	}
++	libseat_close_device(session->seat_handle, device_id);
++ 	close(fd);
++	return NULL;
++}
++
++struct wlr_device *wlr_fd_to_device(struct wlr_session *session, int fd) { // bottom of wlr_session_open_file 
+ 	struct wlr_device *dev = malloc(sizeof(*dev));
+ 	if (!dev) {
+ 		wlr_log_errno(WLR_ERROR, "Allocation failed");
+-		goto error;
++		return NULL;
+ 	}
+ 
+ 	struct stat st;
+ 	if (fstat(fd, &st) < 0) {
+ 		wlr_log_errno(WLR_ERROR, "Stat failed");
+-		goto error;
++		free(dev);
++		return NULL;
+ 	}
+ 
+ 	dev->fd = fd;
+ 	dev->dev = st.st_rdev;
+-	dev->device_id = device_id;
++	dev->device_id = -1;
++	dev->drm_lease = NULL;
+ 	wl_signal_init(&dev->events.change);
+ 	wl_signal_init(&dev->events.remove);
+ 	wl_list_insert(&session->devices, &dev->link);
+-
+ 	return dev;
+-
+-error:
+-	libseat_close_device(session->seat_handle, device_id);
+-	free(dev);
+-	close(fd);
+-	return NULL;
+ }
+ 
+ void wlr_session_close_file(struct wlr_session *session,
+ 		struct wlr_device *dev) {
+-	if (libseat_close_device(session->seat_handle, dev->device_id) == -1) {
++	dlm_release_lease(dev->drm_lease);
++	if (dev->device_id != -1 && libseat_close_device(session->seat_handle, dev->device_id) == -1) {
+ 		wlr_log_errno(WLR_ERROR, "Failed to close device %d", dev->device_id);
+ 	}
+ 
+@@ -461,8 +469,43 @@ static void find_gpus_handle_add(struct wl_listener *listener, void *data) {
+ 	handler->added = true;
+ }
+ 
++static ssize_t open_kms_lease(struct wlr_session *session, struct wlr_device **ret, const char *drm_lease_name) {
++	wlr_log(WLR_INFO, "Opening KMS device: %s", drm_lease_name);
++
++	int fd;
++	struct dlm_lease *lease = dlm_get_lease(drm_lease_name);
++	if (!lease  || (fd = dlm_lease_fd(lease)) < 0 ) {
++		wlr_log(WLR_ERROR, "Could not get DRM lease %s", drm_lease_name);
++		dlm_release_lease(lease);
++		return 0;
++	}
++
++	struct wlr_device *dev = wlr_fd_to_device(session, fd);
++	if (!dev) {
++		wlr_log(WLR_ERROR, "Unable to open %s as KMS device", drm_lease_name);
++		close(fd);
++		dlm_release_lease(lease);
++		return 0;
++	}
++	dev->drm_lease = lease;
++
++	if (!drmIsKMS(dev->fd)) {
++		wlr_log(WLR_ERROR, "Ignoring '%s': not a KMS device", drm_lease_name);
++		wlr_session_close_file(session, dev);
++		return 0;
++	}
++
++	(*ret) = dev;
++	return 1;
++}
++
+ ssize_t wlr_session_find_gpus(struct wlr_session *session,
+ 		size_t ret_len, struct wlr_device **ret) {
++	const char *lease = getenv("DRM_LEASE");
++	if (lease) {
++		return open_kms_lease(session, ret, lease);
++	}
++
+ 	const char *explicit = getenv("WLR_DRM_DEVICES");
+ 	if (explicit) {
+ 		wlr_log(WLR_INFO, "Opening fixed list of KMS devices from WLR_DRM_DEVICES: %s", explicit);
+diff --git a/include/wlr/backend/session.h b/include/wlr/backend/session.h
+index a1ff0c31..05210885 100644
+--- a/include/wlr/backend/session.h
++++ b/include/wlr/backend/session.h
+@@ -4,6 +4,7 @@
+ #include <stdbool.h>
+ #include <sys/types.h>
+ #include <wayland-server-core.h>
++#include <dlmclient.h>
+ 
+ struct libseat;
+ 
+@@ -20,6 +21,8 @@ struct wlr_device {
+ 		struct wl_signal change; // struct wlr_device_change_event
+ 		struct wl_signal remove;
+ 	} events;
++	
++	struct dlm_lease *drm_lease;
+ };
+ 
+ /**
+@@ -118,6 +121,12 @@ void wlr_session_destroy(struct wlr_session *session);
+ struct wlr_device *wlr_session_open_file(struct wlr_session *session,
+ 	const char *path);
+ 
++/*
++ * converts file descriptor to wlr_device
++ * initializes wlr session signals
++ */
++struct wlr_device *wlr_fd_to_device(struct wlr_session *session, int fd);
++
+ /*
+  * Closes a file previously opened with wlr_session_open_file().
+  */
+diff --git a/meson.build b/meson.build
+index fb1ea12b..1d68aa0c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -132,6 +132,7 @@ wlr_deps = [
+ 	math,
+ 	rt,
+ ]
++wlr_deps += dependency('libdlmclient')
+ 
+ subdir('protocol')
+ subdir('render')

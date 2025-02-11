@@ -86,9 +86,9 @@ function start_seat2(){  # $1 lease    $2 user
 	systemctl set-environment DRM_LEASE=$1
 	systemctl set-environment usbdvs="$( get_conf2 usbd $1 )"
 	systemctl set-environment open="$( [[ $user != 'guest' ]] && get_conf2 open $1 || echo "$guest_login_cmd" )"
-
-	[[ "$old_user" != "" ]] &&	systemctl stop  multiseat-compositor@$old_user.service
-					systemctl start multiseat-compositor@$user.service
+	[[ "$old_user" != "" ]] && [[ "$old_user" != "$user" ]] && \
+		systemctl stop    multiseat-compositor@$old_user.service
+		systemctl restart multiseat-compositor@$user.service
 }
 
 
@@ -96,8 +96,8 @@ function start_seat2(){  # $1 lease    $2 user
 
 function get_conf2(){ #  $1 field    $2 card || seat pos ] || ""
 
-	 # load cfgs, remove comments, append EOF delimeter
-	cfgs=$( sed -e "s/#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" /tmp/multiseat.conf )$'\n'cardcard
+	# load cfgs, remove comments, append EOF delimiter
+	cfgs=$( sed -e "s/[[:space:]]*#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" $conf )$'\n'cardcard
 
 	# return cards list
 	[[ "$1" == "card" ]] && [[ "$2" == "" ]] && echo -e "$cfgs" | grep "^card[0-9]" 
@@ -113,6 +113,7 @@ function get_conf2(){ #  $1 field    $2 card || seat pos ] || ""
 	IFS=$'\n'
 	for cfg in $card_cfgs
 	do
+
 		case ${cfg:0:4} in
 
 			"ps2k" | "ps2m")
@@ -120,11 +121,11 @@ function get_conf2(){ #  $1 field    $2 card || seat pos ] || ""
 				;;
 
 			"usbm" | "usbk")
-				[[ $1 == "devs" ]] && echo /sys/devices/pci*/*/usb[12]/driver/[0-9]${cfg:6}/*/*/input/input*
-				;; # path set to usb2 istead of usb*   # after usb: driver or * ?
-			
-			"usbd")
-				[[ $1 == "usbd" ]] && ( basename /sys/devices/*/*/usb[12]/driver/[0-9]${cfg:6} || echo "'$card' usb '$cfg' not found" >&2 )
+				[[ $1 == "devs" ]] && echo $( readlink -f /sys/devices/pci*/*/usb2/driver/*${cfg:9} | grep ${cfg:5:4} )/*/*/input/input*
+				;; # path set to usb2, because udev create links in both buses
+
+			"usbd") # usbX 1d.0-1.4.4
+				[[ $1 == "usbd" ]] && basename -a $( readlink -f /sys/devices/pci*/*/usb2/driver/*${cfg:9} | grep ${cfg:5:4} )
 				;;
 			
 			"open")
@@ -151,8 +152,17 @@ function start_guard2(){
 	do
 		for card in $( get_conf2 card )
 		do
-			loginctl attach seat-$card /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
-			
+			unset attach
+			seat_devs="$( loginctl seat-status seat-$card )" # avoid re-attach ( spare writes on /etc/udev/rules.d/* )
+			for dev in /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
+			do
+				[[ "$seat_devs" != *$dev* ]] && attach+=" $dev"
+			done
+			[[ "$attach" != "" ]] && loginctl attach seat-$card $attach
+#			loginctl attach seat-$card /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
+
+# TODO labwc reload devices, because it cant use newly attached devices
+
 			user=$( loginctl | grep $card | xargs | cut -d " " -f 3 )
 			[[ "$user" == "" ]] && echo "$card $usb" >> /tmp/usb_fail.log && continue # user=${1,,}
 			
@@ -248,7 +258,8 @@ case "$1" in
 	do
 		! [ -e $file ] && ( ln -s /usr/local/$file $( dirname $file ) || exit 30 )
 	done
-	
+	# change this to ldconfig or PKGBUILD (pacman can handle dependencies)(needs noupdate on pacman.conf )
+		
 	echo -e "$wb creating guest and build+cfg directories ..."
 	useradd guest
 	#useradd ${ms_dir##*/}
@@ -263,10 +274,10 @@ case "$1" in
 	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
-		xorg-xwayland xcb-util-cursor libxml2 glib2 hwdata libdisplay-info libliftoff gtk-layer-shell \
-		pcmanfm-qt xfce4-terminal swayidle || exit 40
+		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
+		gtk-layer-shell pcmanfm-qt xfce4-terminal || exit 40 # swayidle 
 
-	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt
+	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt  ## maybe pacman --somenthing_like__install_required
 	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
     ;;
 
@@ -287,23 +298,25 @@ case "$1" in
 	cd $ms_dir || exit 50
 
 	href=( 'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' 'github.com/LBCrion/sfwbar' \
-		'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' 'git.sr.ht/~leon_plickat/wlopm' )
+		'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' 'git.sr.ht/~leon_plickat/wlopm' \
+		 )
 
 	name=$( basename ${href[$2]} )
-	if ! cd $name/ 
+	if ! cd $name/ 2> /dev/null || [[ "$1" == "-g" ]]
 	then
-		echo -e "$wb git clone $name ...."
-		git clone "https://${href[$2]}" || exit 60
-		cd $name
+		echo -e "$wb clonning/updating $name ...."
 
-		branch=( '0.18.0' )
-		if [[ "${branch[$2]}" != "" ]]
+		if [[ "$name" != $( basename $( pwd ) ) ]]
 		then
-			echo -e "$wb selecting branch ${branch[$2]} ...."
-			git checkout ${branch[$2]}
+			git clone "https://${href[$2]}" || exit 60
+			cd $name
 		fi
-		
+
 		git reset --hard
+		branch=( '0.18.2' )
+		[[ "${branch[$2]}" != "" ]] && git checkout ${branch[$2]}
+		git pull
+		
 	
 		patch_href=( 'gitlab.freedesktop.org/garlett/wlroots-lease-multiseat' )
 		if [[ "${patch_href[$2]}" != "" ]]
@@ -313,15 +326,19 @@ case "$1" in
 			git remote update
 			git diff master remotes/b/master > multiseat.patch
 			patch -Np1 < multiseat.patch
+			# host a patch file on github
 		fi
+
+		echo -e "$wb applying configs ...."
 
 	       	[[ "$name" == "tomlc99" ]] && mv libtoml.pc{.sample,}
 		[[ "$name" == "labwc" ]] && ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/ && \
 		 	cat <<- 'EOF' > /etc/multiseat/labwc/autostart
-			sfwbar > /dev/null 2>&1 &
-			pcmanfm-qt --desktop > /dev/null 2>&1 &
-			swayidle -w timeout 420 "wlopm --off \*" resume "wlopm --on \*" > /dev/null 2>&1 &
+				sfwbar > /dev/null 2>&1 &
+				pcmanfm-qt --desktop > /dev/null 2>&1 &
 			EOF
+			#swayidle -w timeout 420 "wlopm --off \*" resume "wlopm --on \*" > /dev/null 2>&1 &
+		[[ "$name" == "sfwbar" ]] && ! grep -q  timer_1 $ms_dir/sfwbar/config/sfwbar.config && sed -i 's/Function("SfwbarInit") {/Module("idle")\nTriggerAction "timer_1", Exec "wlopm --off *"\nTriggerAction "resumed", Exec "wlopm --on *"\nFunction("SfwbarInit") {\n\tIdleTimeout "timer_1", "420" /' $ms_dir/sfwbar/config/sfwbar.config # ugly
 	fi
 
 	
@@ -361,8 +378,9 @@ case "$1" in
 	drm=($( basename -a /sys/devices/pci*/*/*/drm/card*/card* /sys/devices/pci*/*/drm/card*/card* ) )
 	d=${#drm[@]}
 
+	# this is not working for same reason as the drm lease, change to pulseaudio ?
 	# find audio devices
-#	for dev in /sys/devices/pci*/*/sound/card*/input* 
+	# 	for dev in /sys/devices/pci*/*/sound/card*/input* 
 #	do
 #		spkr[$((s++))]="spkr $(echo "$dev" | sed 's|/sys/[^ ]*sound/card||g')	#- $(cat $dev/name)"
 #	done
@@ -375,8 +393,9 @@ case "$1" in
 		dev=${dev/'/capabilities/key'/}
 
 		[[ $(cat $dev/phys) =~ usb.* ]] && continue
-
-		dev_p_d="$( basename $( dirname $(cat $dev/phys)))	#- $(cat $dev/name))"
+		
+		dev_p_d="$( basename $( dirname $(cat $dev/phys)))                                      "
+		dev_p_d="${dev_p_d:0:22} #- $(cat $dev/name)"
 
 		[[ ${key_cap[0]} == efffffffffffffff ]]  && keyboard[$((k++))]="ps2k $dev_p_d"
 
@@ -384,17 +403,29 @@ case "$1" in
 
 		done
 
+# write auto-config procedure as: (start it when: no cfg is found? secret key?)
+#  use current preallocation
+#  start a terminal showing asking the user to: type a numeric code and series of clicks and scroll ?
+#  for audio ?
+
+# merge on cfg file ps2k + ps2m, usbm + usbk + usbd, then detect on get_conf2, include hub
+#  inside this function is still needed to know the type for the preallocator
+#  usb owner need only usbd ?
+  
 	# find usb devices
 	for path_port in /sys/devices/*/*/usb2/driver/*.*
        	do
-		port=$( basename $path_port 2> /dev/null )
-		[[ $port != *.* ]] && continue
+		port=$( readlink -f $path_port )	# /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.4/2-1.4.4
+		port=${port##*:}			# 1d.0/usb2/2-1/2-1.4/2-1.4.4
+		port=${port:0:4}-${port##*-}		# 1d.0-1.4.4
 
 		dev_id=$( cat $path_port/idVendor 2> /dev/null ):$( cat $path_port/idProduct 2> /dev/null )
 		name=$( lsusb | grep " $dev_id " | head -n 1 )
 		name=${name:33}
 		serial="$( [ -e $path_port/serial ] && echo " - $( cat $path_port/serial )" )"
-		dev_p_d="$port	#- $name$serial"
+		dev_p_d="$port                                      "
+		dev_p_d="${dev_p_d:0:22} #- $name$serial"
+#		dev_p_d="$port	#- $name$serial"
 
 
 		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $dev_p_d" && continue
@@ -404,7 +435,7 @@ case "$1" in
 		! [[ ${name,,} =~ .*\ hub\ .* ]] && usbd[$((u++))]="usbd $dev_p_d" && continue
 	done
 
-	# update $conf with discovered devices
+	# update $conf  with discovered devices
 	cfgs=$( cat $conf 2> /dev/null )
 	[[ "$cfgs" == ""  ]] && cfgs="#	open $guest_login_cmd"
 
@@ -419,8 +450,10 @@ case "$1" in
 		p=$((p+1))
 	done
 
-	echo -e "$cfgs" > $conf
-	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && vim $conf
+	echo -e "$cfgs" > /tmp/multiseat_cfg.tmp
+	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && vim /tmp/multiseat_cfg.tmp
+	mv /tmp/multiseat_cfg.tmp $conf
+	echo -e "$ms should we run -f before -c ?"
 	;;
 
 
