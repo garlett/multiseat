@@ -1,5 +1,5 @@
 # Install and run
-cd && wget https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.18/{multiseat.sh,LICENSE} && chmod 770 multiseat.sh && ./multiseat.sh -a
+cd && wget https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.19/{multiseat.sh,LICENSE} && chmod 770 multiseat.sh && ./multiseat.sh -a
 
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.
@@ -16,7 +16,7 @@ Currently using with 4 seats on nvdia gf7300 and amd R5-230
 
 ***Need help on refering this repo on multi seat tutorials.***
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.19/docs/not%20nested%20multiseat%20using%20single%20graphics%20card%20gpu.jpg?raw=true)
 
 # VGA adapters
 The boards that I tested, can only work with two displays at the same time: gf6200 and gf7300: VGA, DVI-I ......... AMD R5 230: VGA, HDMI, DVI-D (it has the analog pins, but they are connected to the vga);
@@ -48,7 +48,7 @@ echo 'GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 video=DVI-I-1:1600x900@60e video=DV
 # VGA over RJ45
  [This cheap adapter](https://pt.aliexpress.com/item/32813247399.html) comes configured as 3x2, and at 10 meters of cat5 gives me a little of ghost in 1024x768.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/vga_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.19/docs/vga_over_rj45.webp?raw=true)
 
 There are some passive converters that have one balun( usualy a torroid transformer with some caps and resistors) per color at each side;
 
@@ -63,7 +63,7 @@ But if you have hdmi monitors, you could use only the cable, or "Laranja Pi Zero
 # USB 10 meter cable
 The [cable](https://shopee.com.br/Cabo-Extensor-10-Metros-Usb-2.0-Ultra-Rapido-Ativo-Amplificado-Macho-F%C3%AAmea-Enivo-Rapido-i.296745639.23091334073) bellow works well with keyboard, mouse and smartcard reader
 
-![USB 10 meter cable](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/usb-10meter-cable.webp?raw=true)
+![USB 10 meter cable](https://github.com/garlett/multiseat/raw/wlroots-0.19/docs/usb-10meter-cable.webp?raw=true)
 
 
 
@@ -75,7 +75,7 @@ This https://www.aliexpress.com/item/1005002747560169.html extender, have an IC 
 
 The PCB have a place for an electrolytic capacitor, USB standard specifies a maximum of 10uF, but I am using 470uF_10v.
 
-![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.18/docs/usb_over_rj45.webp?raw=true)
+![multiseat using single graphics card gpu](https://github.com/garlett/multiseat/raw/wlroots-0.19/docs/usb_over_rj45.webp?raw=true)
 
 USB voltage range is 4.75V .. 5.25V, in my tests the voltage drop of each device, at 10 meters was:
 - 10 mV for a cheap 4-port hub;
