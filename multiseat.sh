@@ -200,63 +200,27 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 				;;
 
 			"usbm" | "usbk")
-				[[ $1 == "devs" ]] && dev=$( echo /sys/devices/pci*/*/usb2/driver/*${cfg:9} ) 
-				[[ $dev != "" ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} )/*/*/input/input*
+				[[ $1 == 'devs' ]] && dev=$( echo /sys/devices/pci*/*/usb*/driver/*${cfg:9} ) 
+				[[ $dev != '' ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} | sort -u )/*-*/*/input/input*
 				unset dev
-				;; # path set to usb2, because udev create links in both buses
-			 
+				;; 
+
 			"usbd") # usbX 1d.0-1.4.4
-				[[ $1 == "usbd" ]] && dev=$( echo /sys/devices/pci*/*/usb2/driver/*${cfg:9} )
-				[[ $dev != "" ]] && dev=$( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} ) 
-				[[ $dev != "" ]] && echo -n "" $( basename -a ${dev// /$'\n'/} )
+				[[ $1 == 'usbd' ]] && dev=$( echo /sys/devices/pci*/*/usb*/driver/*${cfg:9} )
+				[[ $dev != '' ]] && dev=$( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} | sort -u ) 
+				[[ $dev != '' ]] && echo -n "" $( basename -a ${dev// /$'\n'/} )
 				unset dev
 				;;
 		esac
 	done
 	IFS=$oIFS
 }
+
 #get_conf2 $1 1 ; echo ----
 #get_conf2 $1 2 ; echo ----
 #get_conf2 $1 3 ; echo ----
 #get_conf2 $1 4 ; echo ----
 #exit
-
-function start_guard2(){
-	echo -e "$ms Starting seat guard ($1) ... "
-	
-	while : ;
-	do
-		for card in $( get_conf2 card )
-		do
-			unset dev user usb
-			seat_devs="$( loginctl seat-status seat-$card )" # avoid re-attach ( spare writes on /etc/udev/rules.d/* )
-			for dev in /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card ) 
-			do
-				[[ "$seat_devs" != *$dev* ]] && [[ $dev != *firmware* ]] && loginctl attach seat-$card $dev
-			done
-
-
-			# usb ownership ( qemu requires this )
-			user=$( loginctl | grep user | grep $card | xargs | cut -d " " -f 3 )
-			[[ "$user" == "" ]] && echo "$( date ) $card" >> /tmp/usb_user_fail.log && continue # user=${1,,}
-			
-			for usb in $( get_conf2 usbd $card )
-			do
-				usbdev=$( grep -h "DEVNAME=.*$" /sys/devices/*/*/usb2/driver/$usb/uevent | head -n 1 )
-				[[ "$usbdev" != "" ]] && chown $user /dev/${usbdev/"DEVNAME="/} # /dev/bus/usb/002/003
-			done
-
-		done
-
-	# temp: avoid non-seat0 vt switch, because of recent loginctl/systemd versions
-	# not working, freezing of hit shortcut
-	#	s="$( loginctl | grep manager | grep -oE "^ +[0-9]" )"
- 	#	[ "$s" =~ $isnumber ]] && loginctl terminate-session $s
-
-		sleep $1
-#		grep -q speed /proc/mdstat 2> /dev/null && sli # raid keyboard status
-	done
-}
 
 
 # reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
@@ -371,7 +335,7 @@ case "$1" in
 
 	       	[[ "$name" == "tomlc99" ]] && mv libtoml.pc{.sample,}
 		[[ "$name" == "labwc" ]] && ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/
-		[[ "$name" == "sfwbar" ]] && ! grep -q  timer_1 $ms_dir/sfwbar/config/sfwbar.config && sed -i 's/Function("SfwbarInit") {/Module("idle")\nTriggerAction "timer_1", Exec "wlopm --off *"\nTriggerAction "resumed", Exec "wlopm --on *"\nFunction("SfwbarInit") {\n\tIdleTimeout "timer_1", "420" /' $ms_dir/sfwbar/config/sfwbar.config # ugly --- maybe lbcryon could make it native, or this should not be in multiseat; add turn on at startup, because it may become stuck off when swfbar crashes
+		[[ "$name" == "sfwbar" ]] && ! grep -q idle_timer $ms_dir/sfwbar/config/sfwbar.config && sed -i 's/Function("SfwbarInit") {/Module("idle")\nTriggerAction "idle_timer", Exec "wlopm --off *"\nTriggerAction "idle_resume", Exec "wlopm --on *"\nFunction("SfwbarInit") {\n\tIdleTimeout "idle_timer", "420"\n\tExec "wlopm --on *"/' $ms_dir/sfwbar/config/sfwbar.config # ugly --- maybe lbcryon could make it native, or this should not be in multiseat
 	fi
 
 	
@@ -503,6 +467,44 @@ case "$1" in
 	echo -e "$ms Flushed."
 	;;
 
+    "-G") # function start_guard2(){
+	echo -e "$ms Starting seat guard ($1) ... "
+	
+	while : ;
+	do
+		for card in $( get_conf2 card )
+		do
+			unset dev user usb
+			seat_devs="$( loginctl seat-status seat-$card )" # avoid re-attach ( spare writes on /etc/udev/rules.d/* )
+			for dev in /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
+			do
+				[[ "$seat_devs" != *$dev* ]] && [[ $dev != *firmware* ]] && loginctl attach seat-$card $dev
+			done #							^^ obsolete?
+
+
+			# usb ownership ( qemu requires this )
+			user=$( loginctl | grep user | grep $card | xargs | cut -d " " -f 3 )
+			[[ "$user" == "" ]] && echo "$( date ) $card" >> /tmp/usb_user_fail.log && continue # user=${1,,}
+			
+			for usb in $( get_conf2 usbd $card )
+			do
+				usbdev=$( echo /sys/devices/*/*/usb*/driver/$usb/uevent )
+				[[ "$usbdev" != "" ]] && usbdev=$( grep -h 'DEVNAME=.*$' $usbdev | head -n 1 )
+				[[ "$usbdev" != "" ]] && chown $user /dev/${usbdev/'DEVNAME='/} # /dev/bus/usb/002/003
+			done
+
+		done
+
+	# temp: avoid non-seat0 vt switch, because of recent loginctl/systemd versions
+	# not working, freezing on hit shortcut
+	#	s="$( loginctl | grep manager | grep -oE "^ +[0-9]" )"
+ 	#	[ "$s" =~ $isnumber ]] && loginctl terminate-session $s
+
+		sleep 2.69s
+#		grep -q speed /proc/mdstat 2> /dev/null && sli # raid keyboard status
+	done
+	;;
+
 
     "-d") # dlm transient service
 	
@@ -541,7 +543,7 @@ case "$1" in
 
     "-s" | "-S") # start services
 
-	[[ $2 == "" ]] && start_guard2 2.69s & # change this to --guard and create a transient service: multiseat-guard
+	systemd-run $0 -G	# start guard service
 	. $0 -d 		# start dlm-lease-manager services
 	. $0 -r "" "guest" 	# start compositor seats services
 
