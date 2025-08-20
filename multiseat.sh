@@ -109,13 +109,20 @@ function start_seat2(){  # $1 lease    $2 user
 
 
 	useradd $user --no-user-group 2> /dev/null
-	if [[ "$create_home" == "yes" ]] && [ ! -d /home/$user/.config/labwc ]
+	if [ ! -d /home/$user/.config/labwc ]
 	then
-		mkdir -p /home/$user/{Desktop,.config}
-		ln -s /etc/multiseat/labwc/ /home/$user/.config/
-		chown $user: -R /home/$user
+		if [[ "$create_home" == "yes" ]] then
+			mkdir -p /home/$user/{Desktop,.config}
+			ln -s /etc/multiseat/labwc/ /home/$user/.config/
+			chown $user: -R /home/$user
+		else
+			mkdir -p /tmp/$user/{Desktop,.config}
+			ln -s /etc/multiseat/labwc/ /tmp/$user/.config/
+			chown $user: -R /tmp/$user
+			
+			[ -d /home/$user/ ] || ln -s /tmp/$user/ /home/$user
+		fi
 	fi
-#	[ -d /home/$user ] || envs+="--setenv=HOME=/tmp/$user "
 
 
 	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock"
@@ -163,7 +170,7 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 
 	# load cfgs, remove comments, append EOF delimiter
 	cfgs=$( sed -e "s/[[:space:]]*#.*//g ;s/[\t]//g; /^[[:space:]]*$/d" $conf )$'\n'cardcard
-
+	
 	# return cards list
 	[[ "$1" == "card" ]] && [[ "$2" == "" ]] && echo -e "$cfgs" | grep "^card[0-9]" 
 	[[ "$2" == "" ]] && return
@@ -177,6 +184,7 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 	IFS=$'\n'
 	for cfg in $card_cfgs
 	do
+#echo $cfg >&2		
 		case ${cfg:0:4} in
 			
 			"card")
@@ -200,16 +208,16 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 				;;
 
 			"usbm" | "usbk")
-				[[ $1 == 'devs' ]] && dev=$( echo /sys/devices/pci*/*/usb*/driver/*${cfg:9} ) 
-				[[ $dev != '' ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} | sort -u )/*-*/*/input/input*
 				unset dev
+				[[ $1 == 'devs' ]] && dev=$( echo /sys/bus/usb/devices/*${cfg:17} )
+				[[ $dev != '' ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:12} | sort -u )/*-*/*/input/input*
 				;; 
 
 			"usbd") # usbX 1d.0-1.4.4
-				[[ $1 == 'usbd' ]] && dev=$( echo /sys/devices/pci*/*/usb*/driver/*${cfg:9} )
-				[[ $dev != '' ]] && dev=$( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:4} | sort -u ) 
-				[[ $dev != '' ]] && echo -n "" $( basename -a ${dev// /$'\n'/} )
 				unset dev
+				[[ $1 == 'usbd' ]] && dev=$( echo /sys/bus/usb/devices/*${cfg:17} )
+				[[ $dev != '' ]] && dev=$( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:12} | sort -u ) 
+				[[ $dev != '' ]] && echo -n "" $( basename -a ${dev// /$'\n'/} )
 				;;
 		esac
 	done
@@ -222,14 +230,6 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 #get_conf2 $1 4 ; echo ----
 #exit
 
-
-# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
-function addc(){  # $1 new config
-	arg=${1%%#- *}
-	echo "$cfgs" | sed "s|$arg.*$|$1|"
-	arg=${arg//'\n'/}
-	[[ "$cfgs" == *$arg* ]] || echo "$1"
-}
 
 
 
@@ -276,7 +276,7 @@ case "$1" in
 
     "-gp") # git clones
 	echo -e "$wb installing required packages ...."
-	pacman -Sy --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
+	pacman -S --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
@@ -380,7 +380,7 @@ case "$1" in
 	s=0
 
 	# find leaseable crtcs
-	drm=($( basename -a /sys/devices/pci*/*/*/drm/card*/card* /sys/devices/pci*/*/drm/card*/card* ) )
+	drm=($( basename -a /sys/devices/pci*/*/{,*/}drm/card*/card* ) ) # find a non-pci path (and readlink -f ? )
 	d=${#drm[@]}
 
 	# this is not working for same reason as the drm lease, change to pulseaudio ?
@@ -400,7 +400,7 @@ case "$1" in
 		[[ $(cat $dev/phys) =~ usb.* ]] && continue
 		
 		dev_p_d="$( basename $( dirname $(cat $dev/phys)))                                      "
-		dev_p_d="${dev_p_d:0:22} #- $(cat $dev/name)"
+		dev_p_d="${dev_p_d:0:29} #- $(cat $dev/name)"
 
 		[[ ${key_cap[0]} == efffffffffffffff ]]  && keyboard[$((k++))]="ps2k $dev_p_d"
 
@@ -414,30 +414,38 @@ case "$1" in
 #  rotate mouses until user close spawned terminal
 
 	# find usb devices
-	for path_port in /sys/devices/*/*/usb2/driver/*.*
+	for dev in $( readlink -f /sys/bus/usb/devices/* ) # /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.4/2-1.4.4
        	do
-		port=$( readlink -f $path_port )	# /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.4/2-1.4.4
-		port=${port##*:}			# 1d.0/usb2/2-1/2-1.4/2-1.4.4
-		port=${port:0:4}-${port##*-}		# 1d.0-1.4.4
+		port=${dev##*/}		# 2-1.4.4 or 2-1.4.4:0
+		[[ $port =~ ':' ]] && continue
 
-		dev_id=$( cat $path_port/idVendor 2> /dev/null ):$( cat $path_port/idProduct 2> /dev/null )
+		dev_id=$( cat $dev/idVendor 2> /dev/null ):$( cat $dev/idProduct 2> /dev/null )
 		name=$( lsusb | grep " $dev_id " | head -n 1 )
 		name=${name:33}
-		serial="$( [ -e $path_port/serial ] && echo " - $( cat $path_port/serial )" )"
-		dev_p_d="$port                                      "
-		dev_p_d="${dev_p_d:0:22} #- $name$serial"
+		serial="$( [ -e $dev/serial ] && echo " - $( cat $dev/serial )" )"
+		pci=${dev%/usb*}
+		device="${pci##*/}-${port##*-}                                      "
+		device="${device:0:29} #- $name$serial"
 
+		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $device" && continue
 
-		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $dev_p_d" && continue
+		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="usbm $device" && continue
 
-		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="usbm $dev_p_d" && continue
-
-		! [[ ${name,,} =~ .*\ hub\ .* ]] && usbd[$((u++))]="usbd $dev_p_d" && continue
+		! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
 	done
 
 	# load $conf
 	cfgs=$( cat $conf 2> /dev/null )
 	[[ "$cfgs" == ""  ]] && cfgs="# comp $default_compositor # open $guest_login_cmd"
+
+
+	# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
+	function addc(){  # $1 new config
+		arg=${1%%#- *} 					# remove comments from arg
+		echo "$cfgs" | sed "s|$arg.*$|$1|"		# output updated $cfgs
+		arg=${arg//'\n'/}				# remove newline from arg
+		[[ "$cfgs" == *${arg:1}* ]] || echo "$1"	# if new cfg then append
+	}
 
 	p=0 # create/update config for devices
  	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
@@ -488,7 +496,8 @@ case "$1" in
 			
 			for usb in $( get_conf2 usbd $card )
 			do
-				usbdev=$( echo /sys/devices/*/*/usb*/driver/$usb/uevent )
+#				usbdev=$( echo /sys/devices/*/*/usb*/driver/$usb/uevent )
+				usbdev=$( echo /sys/bus/usb/devices/$usb/uevent* )
 				[[ "$usbdev" != "" ]] && usbdev=$( grep -h 'DEVNAME=.*$' $usbdev | head -n 1 )
 				[[ "$usbdev" != "" ]] && chown $user /dev/${usbdev/'DEVNAME='/} # /dev/bus/usb/002/003
 			done
@@ -500,7 +509,7 @@ case "$1" in
 	#	s="$( loginctl | grep manager | grep -oE "^ +[0-9]" )"
  	#	[ "$s" =~ $isnumber ]] && loginctl terminate-session $s
 
-		sleep 2.69s
+		sleep 9s
 #		grep -q speed /proc/mdstat 2> /dev/null && sli # raid keyboard status
 	done
 	;;
