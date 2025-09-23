@@ -4,13 +4,12 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-# [[ "-S" == "$1" ]] && systemctl disable multiseat # uncomment this line until reboot is working
+# [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
 
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
 guest_login_cmd="xfce4-terminal --fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e /home/login.sh"
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
-create_home=no # create home folder for new users [yes|no]
 
 #echo echo$((e++)) >&2
 
@@ -48,7 +47,7 @@ function wait_files(){ # $1 path    $2 files
 		while ! ls $1$file >& /dev/null
 		do
  			sleep $wait_time
-			[ $((count--)) -lt 0 ] && echo -e "$ms could not find: $1$file" && break
+			[ $((count--)) -lt 0 ] && echo -e "$ms could not find: $1$file" && return 1
 		done
 	done
 	return 0
@@ -78,7 +77,7 @@ function start_seat2(){  # $1 lease    $2 user
 	# do not restart when running from inside seat
 	[[ "$XDG_SEAT" == "seat-$1" ]] && exit
 	
-	echo -e "$ms start_seat: lease $1 arg '$2'"
+	echo -e "$ms start_seat: lease $1 user '$2'"
 	
 	systemctl stop multiseat-$1 2> /dev/null 
 	systemctl reset-failed       	
@@ -102,30 +101,31 @@ function start_seat2(){  # $1 lease    $2 user
 		user=$2
 	fi
 	IFS=$oIFS
+
+
+	base_dir="$( eval echo ~$user )"
+	if [ ! -d $base_home/$user/.config/labwc ]
+	then
+		useradd $user --no-user-group > /dev/null 2>&1
+
+		base_dir="$( eval echo ~$user )"
+		if [ ! -d $base_dir ]
+		then 
+			base_dir=/tmp/$user 
+			usermod $user --home $base_dir 
+		fi
+		 
+		mkdir -p $base_home/$user/{Desktop,.config}
+		ln -s /etc/multiseat/labwc/ $base_home/$user/.config/
+		chown $user: -R $base_home/$user
+	fi
+
 	resta="--property=RestartSec=1s --property=Restart=always "
 	param="$( [[ ${comp[0]} == "weston" ]] && echo --drm-lease=$1 ) "
  	user_id=$( id -u $user )
   	envs="--uid=$user_id "
 
-
-	useradd $user --no-user-group 2> /dev/null
-	if [ ! -d /home/$user/.config/labwc ]
-	then
-		if [[ "$create_home" == "yes" ]] then
-			mkdir -p /home/$user/{Desktop,.config}
-			ln -s /etc/multiseat/labwc/ /home/$user/.config/
-			chown $user: -R /home/$user
-		else
-			mkdir -p /tmp/$user/{Desktop,.config}
-			ln -s /etc/multiseat/labwc/ /tmp/$user/.config/
-			chown $user: -R /tmp/$user
-			
-			[ -d /home/$user/ ] || ln -s /tmp/$user/ /home/$user
-		fi
-	fi
-
-
-	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock"
+	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
 
 	# compositor
@@ -137,10 +137,10 @@ function start_seat2(){  # $1 lease    $2 user
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .001" ${comp[0]} $param # -dVVV 
-									# sleep: wlroots or systemd is not openning session on first try
-	wait_files /run/user/$user_id/ wayland-0{,.lock}
 
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .001" ${comp[0]} $param #-dVVV
+				# sleep: wlroots or systemd is not openning session on first try
+	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
 
 	envs+="--property=After=multiseat-$1.service "
 	envs+="--property=PartOf=multiseat-$1.service "
@@ -150,16 +150,14 @@ function start_seat2(){  # $1 lease    $2 user
 	envs+="--setenv=DBUS_SESSSION_BUS_ADDRESS=unix:path=/run/user/$user_id/bus "
 	envs+="--setenv=DISPLAY=$( basename $( find /tmp/.X11-unix/ -maxdepth 1 -user $user ) | tr X : ) "
 	
-	# auto restart services
  	for serv in "${comp[@]:1}"
  	do
-		systemd-run $envs $resta $serv
+		systemd-run --unit=multiseat-$1-$(echo $serv | awk '{print $1;}')-$RANDOM $envs $resta $serv
 	done
 
-	# run once applications
 	for app in "${apps[@]}"
 	do
-		systemd-run $envs $app
+		systemd-run --unit=multiseat-$1-$(echo $app  | awk '{print $1;}')-$RANDOM $envs $app 
 	done
 }
 
@@ -584,8 +582,9 @@ case "$1" in
 
 
     "-j") # journal logs 
-	#journalctl -xe -u multiseat* 
-	journalctl -S -12h -t sh -t multiseat.sh -t systemd-run -t "(sh)" -t pcmanfm-qt
+	#journalctl --no-hostname -S -12h -u "multiseat*"
+	#journalctl --no-hostname -S -12h -t sh -t multiseat.sh -t systemd-run -t "(sh)" -t pcmanfm-qt
+	journalctl --no-hostname -b | grep -e multiseat -e labwc
 	;;
 
     "-a") # auto
