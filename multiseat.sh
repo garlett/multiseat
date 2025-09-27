@@ -103,21 +103,21 @@ function start_seat2(){  # $1 lease    $2 user
 	IFS=$oIFS
 
 
-	base_dir="$( eval echo ~$user )"
-	if [ ! -d $base_home/$user/.config/labwc ]
+	user_home="$( eval echo ~$user )"
+	if [ ! -d $user_home/.config/labwc ]
 	then
 		useradd $user --no-user-group > /dev/null 2>&1
 
-		base_dir="$( eval echo ~$user )"
-		if [ ! -d $base_dir ]
+		user_home="$( eval echo ~$user )"
+		if [ ! -d $user_home ]
 		then 
-			base_dir=/tmp/$user 
-			usermod $user --home $base_dir 
+			user_home=/tmp/$user 
+			usermod $user --home $user_home 
 		fi
 		 
-		mkdir -p $base_home/$user/{Desktop,.config}
-		ln -s /etc/multiseat/labwc/ $base_home/$user/.config/
-		chown $user: -R $base_home/$user
+		mkdir -p $user_home/{Desktop,.config}
+		ln -s /etc/multiseat/labwc/ $user_home/.config/
+		chown $user: -R $user_home
 	fi
 
 	resta="--property=RestartSec=1s --property=Restart=always "
