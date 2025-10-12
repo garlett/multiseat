@@ -10,7 +10,6 @@ what it does:
 - creates configuration for: keyboards, mouses and videos
 - apply kmv config on the seats
 - start compositor service for each seat with non-root user
-- start compositor applications with compositor as ppid
 
 Currently using with 4 seats on nvdia gf7300 and amd R5-230
 
@@ -25,9 +24,9 @@ I guess that intermediary boards could accept 3 outputs and high end boards 4 or
 
 [Sparkle Intel Arc A310 ELF](https://www.amazon.com/dp/B0CHN9R4P2?tag=pcpapi-20&linkCode=ogi&th=1) and [Asus GT710](https://pcpartpicker.com/product/P2CFf7/asus-geforce-gt-710-2-gb-video-card-gt710-4h-sl-2gd5) should take 4 displays. ? RX {570,580,590} ?
 
-Did not tested usb(3) to vga or hdmi (probably does not require drm lease)
+Did not tested usb3 to vga or hdmi (probably does not require drm lease)
 
-Did not tested DisplayPort Multi-Stream Transport (Daisy-chained monitors or DisplayPort MST splitter)
+Did not tested DisplayPort Multi-Stream Transport ([Daisy-chained monitors](https://www.displayninja.com/daisy-chain-monitor-list/) or DisplayPort MST splitter)
 
 # VGA cables
 AFIK, the wire nomenclature is CxD, where:
