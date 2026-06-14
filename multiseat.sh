@@ -316,7 +316,7 @@ case "$1" in
 		fi
 
 		git reset --hard
-		branch=( '0.19' )
+		branch=( '0.20' )
 		[[ "${branch[$2]}" != "" ]] && git checkout ${branch[$2]}
 		git pull
 		
