@@ -276,7 +276,7 @@ case "$1" in
 	echo -e "$wb installing required packages ...."
 	pacman -S --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
-		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
+		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch neatvnc \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
 		gtk-layer-shell pcmanfm-qt xfce4-terminal || exit 40 # swayidle 
 
