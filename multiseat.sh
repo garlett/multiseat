@@ -424,12 +424,23 @@ case "$1" in
 		pci=${dev%/usb*}
 		device="${pci##*/}-${port##*-}                                      "
 		device="${device:0:29} #- $name$serial"
+        
+        #According to https://www.usb.org/sites/default/files/documents/hid1_11.pdf 03 is HID and bInterfaceProtocol 1 is keyboard.
+        #In section 5.1 "Device Descriptor Structure" of the same document it says:
+        #"Class type is not defined at the Device descriptor level. The class type for a HID class device is defined by the Interface descriptor"
+        if grep -q "03" $dev/*/bInterfaceClass 2>/dev/null && grep -q "01" $dev/*/bInterfaceProtocol 2>/dev/null; then
+            keyboard[$((k++))]="usbk $device"
+            continue
+        fi
 
-		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $device" && continue
+        #Class 3 is HID and interface protocol 2 is mouse. 
+        if grep -q "03" $dev/*/bInterfaceClass 2>/dev/null && grep -q "02" $dev/*/bInterfaceProtocol 2>/dev/null; then
+            mouse[$((m++))]="usbm $device"
+            continue
+        fi
 
-		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="usbm $device" && continue
-
-		! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
+        ! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
+        
 	done
 
 	# load $conf
