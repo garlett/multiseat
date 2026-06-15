@@ -469,7 +469,7 @@ case "$1" in
 
 	#save $conf
 	echo -e "$cfgs" > /tmp/multiseat_cfg.tmp
-	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && vim /tmp/multiseat_cfg.tmp
+	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && nano /tmp/multiseat_cfg.tmp
 	mv /tmp/multiseat_cfg.tmp $conf
 	echo -e "$ms should we run -f before -c ?"
 	;;
