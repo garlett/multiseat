@@ -62,7 +62,7 @@ do
 done
 
 # config file name based on current hardware path configuration
-conf=$( echo /sys/devices/pci*/*/{,*/}drm/card*/card* )
+conf=$(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune)
 [[ "$conf" != "" ]] && conf=/etc/multiseat/_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
 
@@ -378,7 +378,7 @@ case "$1" in
 	s=0
 
 	# find leaseable crtcs
-	drm=($( basename -a /sys/devices/pci*/*/{,*/}drm/card*/card* ) ) # find a non-pci path (and readlink -f ? )
+    drm=($(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune -exec basename {} \; 2>/dev/null)) # find a non-pci path (and readlink -f ? )
 	d=${#drm[@]}
 
 	# this is not working for same reason as the drm lease, change to pulseaudio ?
