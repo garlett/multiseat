@@ -23,6 +23,7 @@ fi
 
 red="\e[1;31m"
 white="\e[0m"
+yellow="\e[1;33m"
 wb="$red[MultiSeat Builder]$white"
 ms="$red[MultiSeat]$white"
 oIFS=$IFS
@@ -603,7 +604,21 @@ case "$1" in
     "-a") # auto
 	$0 -b
 	$0 -c
-	$0 -s
+	if [[ "$(systemctl get-default)" == "graphical.target" ]]; then 
+		echo -e "$yellow WARNING: $white Your system is configured to use \"graphical.target\", which most likely interferes with the multiseat system."
+		echo "It is highly recommended that you change it with the following command: 'sudo systemctl set-default multi-user.target'."
+		echo "Do you want me to run that command right now?"
+
+		read -p "[y/N]: " confirm
+        
+        if [[ $confirm == [yY] ]]; then
+            sudo systemctl set-default multi-user.target
+            echo "Change completed"
+			echo "In principle, if you restart your computer now, the multiseat should work :)"
+		fi
+	fi 
+	sudo systemctl enable multiseat
+
 	;;
 
     *)
