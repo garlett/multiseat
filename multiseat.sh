@@ -274,6 +274,7 @@ case "$1" in
 
     "-gp") # git clones
 	echo -e "$wb installing required packages ...."
+
 	pacman -S --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch neatvnc \
@@ -300,9 +301,10 @@ case "$1" in
 
 	cd $ms_dir || exit 50
 
-	href=( 'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' 'github.com/LBCrion/sfwbar' \
-		'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' 'git.sr.ht/~leon_plickat/wlopm' \
-		 )
+	href=( 'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' \
+        'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' \
+        'github.com/LBCrion/sfwbar' 'git.sr.ht/~leon_plickat/wlopm' \
+         )
 
 	name=$( basename ${href[$2]} )
 	if ! cd $name/ 2> /dev/null || [[ "$1" == "-g" ]]
@@ -316,12 +318,11 @@ case "$1" in
 		fi
 
 		git reset --hard
-		branch=( '0.20' )
+		branch=( [2]='0.20' )
 		[[ "${branch[$2]}" != "" ]] && git checkout ${branch[$2]}
 		git pull
 		
-	
-		patch_href=( 'raw.githubusercontent.com/garlett/multiseat/refs/heads/wlroots-0.18/multiseat' ) # /wlroots
+		patch_href=( [2]='raw.githubusercontent.com/garlett/multiseat/refs/heads/wlroots-0.18/multiseat' ) # /wlroots
 		if [[ "${patch_href[$2]}" != "" ]]
 		then
 			echo -e "$wb patching with $( basename ${patch_href[$2]} ) ...."
