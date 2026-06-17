@@ -377,8 +377,9 @@ case "$1" in
 	a=0
 	s=0
 
+    read -p "Please connect all monitors and peripherals you plan to use in the multiseat system. When you have finished connecting them, press ENTER."
 	# find leaseable crtcs
-    drm=($(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune -exec basename {} \; 2>/dev/null)) # find a non-pci path (and readlink -f ? )
+    drm=($(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune -exec grep -q "^connected$" {}/status \; -exec basename {} \; 2>/dev/null))
 	d=${#drm[@]}
 
 	# this is not working for same reason as the drm lease, change to pulseaudio ?
