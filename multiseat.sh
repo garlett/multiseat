@@ -129,11 +129,14 @@ function start_seat2(){  # $1 lease    $2 user
 	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
 
+	sys_layout=$(localectl status | awk '/X11 Layout/ {print $3}')
+    sys_layout=${sys_layout:-us}
+
 	# compositor
 	systemctl set-environment \
 		SEATD_VTBOUND=0 \
 		XDG_SESSION_TYPE=wayland \
-		XKB_DEFAULT_LAYOUT=br \
+		XKB_DEFAULT_LAYOUT="$sys_layout" \
 		XDG_SEAT=seat-$1 \
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
