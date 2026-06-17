@@ -4,11 +4,14 @@
 # this is intended for multiseat with one single graphics card,
 # without using xorg xephyr or other nested solution
 
-# [[ "-S" == "$1" ]] && systemctl disable multiseat # comment this line when reboot is working
+# !!!!!!!!! IMPORTANT !!!!!!!!!!!!
+# until reboot is working, uncomment the line bellow and enable the service before each boot test
+# [[ "-S" == "$1" ]] && systemctl disable multiseat 
 
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
-guest_login_cmd="xfce4-terminal --fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e /home/login.sh"
+guest_login_cmd="/home/login.sh"
+guest_login_cmd="xfce4-terminal $( [ -e $guest_login_cmd ] && echo "--fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e $guest_login_cmd") "
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
 
 #echo echo$((e++)) >&2
@@ -79,15 +82,16 @@ function start_seat2(){  # $1 lease    $2 user
 	
 	echo -e "$ms start_seat: lease $1 user '$2'"
 	
-	systemctl stop multiseat-$1 2> /dev/null 
-	systemctl reset-failed       	
+	systemctl stop multiseat-$1 2> /dev/null
+	systemctl reset-failed
 
-
+	# get seat compositor and list of apps 
 	IFS=\;
 	apps=( $( get_conf2 open $1 ) )
 	comp=( $( get_conf2 comp $1 ) )
 	[[ ${comp[@]} == "" ]] && comp=( $default_compositor )
 
+	# set default user 
 	if [[ "$2" == "" ]] || [[ $2 == 'guest' ]]
 	then
 		if [[ $2 == 'guest' ]]
@@ -102,17 +106,17 @@ function start_seat2(){  # $1 lease    $2 user
 	fi
 	IFS=$oIFS
 
-
+	# config: new user, user home folder, labwc default link config
 	user_home="$( eval echo ~$user )"
 	if [ ! -d $user_home/.config/labwc ]
 	then
-		useradd $user --no-user-group > /dev/null 2>&1
+		useradd $user > /dev/null 2>&1 # --no-user-group
 
 		user_home="$( eval echo ~$user )"
 		if [ ! -d $user_home ]
 		then 
 			user_home=/tmp/$user 
-			usermod $user --home $user_home 
+			usermod $user --home $user_home
 		fi
 		 
 		mkdir -p $user_home/{Desktop,.config}
@@ -123,7 +127,7 @@ function start_seat2(){  # $1 lease    $2 user
 	resta="--property=RestartSec=1s --property=Restart=always "
 	param="$( [[ ${comp[0]} == "weston" ]] && echo --drm-lease=$1 ) "
  	user_id=$( id -u $user )
-  	envs="--uid=$user_id "
+  	envs="--uid=$user_id --property=UMask=0006 " # 666 - 006 -> 660
 
 	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
@@ -138,14 +142,14 @@ function start_seat2(){  # $1 lease    $2 user
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
 
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .001" ${comp[0]} $param #-dVVV
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" ${comp[0]} $param #-dVVV
 				# sleep: wlroots or systemd is not openning session on first try
 	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
 
 	envs+="--property=After=multiseat-$1.service "
 	envs+="--property=PartOf=multiseat-$1.service "
 	envs+="--setenv=XDG_CURRENT_DESKTOP=wlroots "
-	envs+="--setenv=WAYLAND_DISPLAY=wayland-0 " # pam_systemd: using one guest user, conflicts on this 4 lines
+	envs+="--setenv=WAYLAND_DISPLAY=wayland-0 " # pam_systemd: cannot use one guest user, because conflicts on this 4 lines
  	envs+="--setenv=XDG_RUNTIME_DIR=/run/user/$user_id " 
 	envs+="--setenv=DBUS_SESSSION_BUS_ADDRESS=unix:path=/run/user/$user_id/bus "
 	envs+="--setenv=DISPLAY=$( basename $( find /tmp/.X11-unix/ -maxdepth 1 -user $user ) | tr X : ) "
@@ -278,7 +282,7 @@ case "$1" in
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
-		gtk-layer-shell pcmanfm-qt xfce4-terminal || exit 40 # swayidle 
+		gtk-layer-shell pcmanfm-qt qt6-svg xfce4-terminal || exit 40 # swayidle 
 
 	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt  ## maybe pacman --somenthing_like__install_required
 	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
@@ -291,7 +295,9 @@ case "$1" in
 	then 
 		for i in {0..5} 
 		do 
-			$0 $1 $i 
+			$0 $1 $i && continue
+			echo -e "$ms error $? as $1 $i"
+			exit
 		done 
 		exit
 	fi
@@ -515,13 +521,13 @@ case "$1" in
 
     "-d") # dlm transient service
 	
-	echo -e "$ms Starting drm-lease-manager services ... "	
 	rm /var/local/run/drm-lease-manager/* 2> /dev/null
 
 	wait_files "/dev/dri/" "$( grep "^card[0-9]" $conf -o )"  # wait configured cards
 	
 	for card in /dev/dri/card*
 	do
+		echo -e "$ms Starting drm-lease-manager services at $card ... "	
 		systemd-run $dlm_log --unit=dlm-$( basename $card ) drm-lease-manager $card
 		# dlm only outputs when ran from terminal with no redirects
 	done #--property=RestartSec=1s --property=Restart=always /usr/local/bin/
@@ -584,7 +590,7 @@ case "$1" in
     "-j") # journal logs 
 	#journalctl --no-hostname -S -12h -u "multiseat*"
 	#journalctl --no-hostname -S -12h -t sh -t multiseat.sh -t systemd-run -t "(sh)" -t pcmanfm-qt
-	journalctl --no-hostname -b | grep -e multiseat -e labwc
+	journalctl --no-hostname -b $2 | grep -e multiseat -e labwc -e seat | less
 	;;
 
     "-a") # auto
