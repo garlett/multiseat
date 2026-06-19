@@ -26,6 +26,7 @@ fi
 
 red="\e[1;31m"
 white="\e[0m"
+yellow="\e[1;33m"
 wb="$red[MultiSeat Builder]$white"
 ms="$red[MultiSeat]$white"
 oIFS=$IFS
@@ -65,7 +66,7 @@ do
 done
 
 # config file name based on current hardware path configuration
-conf=$( echo /sys/devices/pci*/*/{,*/}drm/card*/card* )
+conf=$(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune)
 [[ "$conf" != "" ]] && conf=/etc/multiseat/_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
 
@@ -132,11 +133,14 @@ function start_seat2(){  # $1 lease    $2 user
 	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
 
+	sys_layout=$(localectl status | awk '/X11 Layout/ {print $3}')
+    sys_layout=${sys_layout:-us}
+
 	# compositor
 	systemctl set-environment \
 		SEATD_VTBOUND=0 \
 		XDG_SESSION_TYPE=wayland \
-		XKB_DEFAULT_LAYOUT=br \
+		XKB_DEFAULT_LAYOUT="$sys_layout" \
 		XDG_SEAT=seat-$1 \
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
@@ -278,9 +282,10 @@ case "$1" in
 
     "-gp") # git clones
 	echo -e "$wb installing required packages ...."
+
 	pacman -S --noconfirm --needed git make meson ninja wget alacritty gcc cmake pkgconfig libdrm sudo \
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
-		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp freerdp2 patch neatvnc \
+		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch neatvnc \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
 		gtk-layer-shell pcmanfm-qt qt6-svg xfce4-terminal || exit 40 # swayidle 
 
@@ -306,9 +311,10 @@ case "$1" in
 
 	cd $ms_dir || exit 50
 
-	href=( 'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' 'github.com/LBCrion/sfwbar' \
-		'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' 'git.sr.ht/~leon_plickat/wlopm' \
-		 )
+	href=( 'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' \
+        'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' \
+        'github.com/LBCrion/sfwbar' 'git.sr.ht/~leon_plickat/wlopm' \
+         )
 
 	name=$( basename ${href[$2]} )
 	if ! cd $name/ 2> /dev/null || [[ "$1" == "-g" ]]
@@ -322,12 +328,11 @@ case "$1" in
 		fi
 
 		git reset --hard
-		branch=( '0.19' )
+		branch=( [2]='0.20' )
 		[[ "${branch[$2]}" != "" ]] && git checkout ${branch[$2]}
 		git pull
 		
-	
-		patch_href=( 'raw.githubusercontent.com/garlett/multiseat/refs/heads/wlroots-0.18/multiseat' ) # /wlroots
+		patch_href=( [2]='raw.githubusercontent.com/garlett/multiseat/refs/heads/wlroots-0.18/multiseat' ) # /wlroots
 		if [[ "${patch_href[$2]}" != "" ]]
 		then
 			echo -e "$wb patching with $( basename ${patch_href[$2]} ) ...."
@@ -383,8 +388,9 @@ case "$1" in
 	a=0
 	s=0
 
+    read -p "Please connect all monitors and peripherals you plan to use in the multiseat system. When you have finished connecting them, press ENTER."
 	# find leaseable crtcs
-	drm=($( basename -a /sys/devices/pci*/*/{,*/}drm/card*/card* ) ) # find a non-pci path (and readlink -f ? )
+    drm=($(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune -exec grep -q "^connected$" {}/status \; -exec basename {} \; 2>/dev/null))
 	d=${#drm[@]}
 
 	# this is not working for same reason as the drm lease, change to pulseaudio ?
@@ -430,12 +436,23 @@ case "$1" in
 		pci=${dev%/usb*}
 		device="${pci##*/}-${port##*-}                                      "
 		device="${device:0:29} #- $name$serial"
+        
+        #According to https://www.usb.org/sites/default/files/documents/hid1_11.pdf 03 is HID and bInterfaceProtocol 1 is keyboard.
+        #In section 5.1 "Device Descriptor Structure" of the same document it says:
+        #"Class type is not defined at the Device descriptor level. The class type for a HID class device is defined by the Interface descriptor"
+        if grep -q "03" $dev/*/bInterfaceClass 2>/dev/null && grep -q "01" $dev/*/bInterfaceProtocol 2>/dev/null; then
+            keyboard[$((k++))]="usbk $device"
+            continue
+        fi
 
-		[[ ${name,,} =~ .*keyboard.* ]] && keyboard[$((k++))]="usbk $device" && continue
+        #Class 3 is HID and interface protocol 2 is mouse. 
+        if grep -q "03" $dev/*/bInterfaceClass 2>/dev/null && grep -q "02" $dev/*/bInterfaceProtocol 2>/dev/null; then
+            mouse[$((m++))]="usbm $device"
+            continue
+        fi
 
-		[[ ${name,,} =~ .*mouse.* ]]    && mouse[$((m++))]="usbm $device" && continue
-
-		! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
+        ! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
+        
 	done
 
 	# load $conf
@@ -464,7 +481,7 @@ case "$1" in
 
 	#save $conf
 	echo -e "$cfgs" > /tmp/multiseat_cfg.tmp
-	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && vim /tmp/multiseat_cfg.tmp
+	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && nano /tmp/multiseat_cfg.tmp
 	mv /tmp/multiseat_cfg.tmp $conf
 	echo -e "$ms should we run -f before -c ?"
 	;;
@@ -594,9 +611,23 @@ case "$1" in
 	;;
 
     "-a") # auto
-	. $0 -b
-	. $0 -c
-	. $0 -s
+	$0 -b
+	$0 -c
+	if [[ "$(systemctl get-default)" == "graphical.target" ]]; then 
+		echo -e "$yellow WARNING: $white Your system is configured to use \"graphical.target\", which most likely interferes with the multiseat system."
+		echo "It is highly recommended that you change it with the following command: 'sudo systemctl set-default multi-user.target'."
+		echo "Do you want me to run that command right now?"
+
+		read -p "[y/N]: " confirm
+        
+        if [[ $confirm == [yY] ]]; then
+            sudo systemctl set-default multi-user.target
+            echo "Change completed"
+			echo "In principle, if you restart your computer now, the multiseat should work :)"
+		fi
+	fi 
+	sudo systemctl enable multiseat
+
 	;;
 
     *)
