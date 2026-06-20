@@ -205,9 +205,13 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 				[[ $1 == "open" ]] && echo -n "" ${cfg:5}
 				;;
 			
-			"spkr")
-				[[ $1 == "spkr" ]] && echo -n "" /sys/devices/pci*/*/sound/card${cfg:5}
-				;;
+			"spkr")                
+                # cfg:5 trims the "spkr" prefix. Use awk to clean up padding.
+                clean_id=$(echo "${cfg:5}" | awk '{print $1}')
+                
+                # When it asks for 'devs', return the absolute path.
+                [[ $1 == "devs" ]] && echo -n "" $(readlink -f /sys/class/sound/$clean_id 2>/dev/null)
+                ;;
 				
 			"ps2k" | "ps2m")
 				[[ $1 == "devs" ]] && echo -n "" /sys/devices/platform/*/${cfg:5}/input/input*
@@ -399,6 +403,24 @@ case "$1" in
 #	do
 #		spkr[$((s++))]="spkr $(echo "$dev" | sed 's|/sys/[^ ]*sound/card||g')	#- $(cat $dev/name)"
 #	done
+    
+    # find audio devices
+    for card in /sys/class/sound/card*; do
+        # --- ANTI-DUPLICATE FILTER (Excludes USB headphones) ---
+        real_path=$(readlink -f "$card")
+        if [[ "$real_path" == *"usb"* ]]; then
+            continue # I'll skip it. It'll detect it further down as usbd and I think that's enough for it to work.
+        fi
+        # --------------------------------------------------------
+
+        name=$(cat "$card/id" 2>/dev/null || echo "Unknown")
+        card_id=$(basename "$card")
+        
+        device="${card_id}                             "
+        device="${device:0:29} #- $name"
+        
+        spkr[$((s++))]="spkr $device"
+    done
 
 
 	# find ps2 devices
