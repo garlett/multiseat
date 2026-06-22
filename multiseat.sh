@@ -155,7 +155,7 @@ function start_seat2(){  # $1 lease    $2 user
 	envs+="--setenv=XDG_CURRENT_DESKTOP=wlroots "
 	envs+="--setenv=WAYLAND_DISPLAY=wayland-0 " # pam_systemd: cannot use one guest user, because conflicts on this 4 lines
  	envs+="--setenv=XDG_RUNTIME_DIR=/run/user/$user_id " 
-	envs+="--setenv=DBUS_SESSSION_BUS_ADDRESS=unix:path=/run/user/$user_id/bus "
+	envs+="--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$user_id/bus "
 	envs+="--setenv=DISPLAY=$( basename $( find /tmp/.X11-unix/ -maxdepth 1 -user $user ) | tr X : ) "
 	
  	for serv in "${comp[@]:1}"
