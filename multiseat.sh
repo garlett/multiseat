@@ -205,12 +205,9 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 				[[ $1 == "open" ]] && echo -n "" ${cfg:5}
 				;;
 			
-			"spkr")                
-                # cfg:5 trims the "spkr" prefix. Use awk to clean up padding.
-                clean_id=$(echo "${cfg:5}" | awk '{print $1}')
-                
-                # When it asks for 'devs', return the absolute path.
-                [[ $1 == "devs" ]] && echo -n "" $(readlink -f /sys/class/sound/$clean_id 2>/dev/null)
+			"spkr")
+                clean_id=$(echo "${cfg:5}")
+                [[ $1 == "devs" ]] && echo -n "" $(readlink -f /sys/bus/pci/devices/$clean_id)/sound/card*
                 ;;
 				
 			"ps2k" | "ps2m")
@@ -404,22 +401,17 @@ case "$1" in
 #		spkr[$((s++))]="spkr $(echo "$dev" | sed 's|/sys/[^ ]*sound/card||g')	#- $(cat $dev/name)"
 #	done
     
-    # find audio devices
-    for card in /sys/class/sound/card*; do
-        # --- ANTI-DUPLICATE FILTER (Excludes USB headphones) ---
-        real_path=$(readlink -f "$card")
-        if [[ "$real_path" == *"usb"* ]]; then
-            continue # I'll skip it. It'll detect it further down as usbd and I think that's enough for it to work.
-        fi
-        # --------------------------------------------------------
 
+	# find audio devices
+    for card in /sys/class/sound/card*; do
+        # Avoid USB; this is already covered in a section below.
+        real_path=$(readlink -f "$card")
+        if [[ "$real_path" == *"usb"* ]]; then continue; fi
+        pci_id=$(basename $(readlink -f "$card/device"))
+        
         name=$(cat "$card/id" 2>/dev/null || echo "Unknown")
-        card_id=$(basename "$card")
-        
-        device="${card_id}                             "
-        device="${device:0:29} #- $name"
-        
-        spkr[$((s++))]="spkr $device"
+        pci_id="$pci_id                                    "
+        spkr[$((s++))]="spkr ${pci_id:0:29} #- $name"
     done
 
 
