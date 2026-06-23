@@ -220,6 +220,12 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 				[[ $dev != '' ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:12} | sort -u )/*-*/*/input/input*
 				;; 
 
+			"usba")
+				unset dev
+				[[ $1 == 'devs' ]] && dev=$( echo /sys/bus/usb/devices/*${cfg:17} )
+				[[ $dev != '' ]] && echo -n "" $( readlink -f ${dev// /$'\n'/} | grep ${cfg:5:12} | sort -u )/*/sound/card*
+				;;
+
 			"usbd") # usbX 1d.0-1.4.4
 				unset dev
 				[[ $1 == 'usbd' ]] && dev=$( echo /sys/bus/usb/devices/*${cfg:17} )
@@ -381,7 +387,7 @@ case "$1" in
 
 
     "-c" | "-C" ) # update config file
-	unset drm mouse keyboard usbd audio spkr 
+	unset drm mouse keyboard usba usbd spkr 
         d=0
         m=0
 	k=0
@@ -392,15 +398,7 @@ case "$1" in
     read -p "Please connect all monitors and peripherals you plan to use in the multiseat system. When you have finished connecting them, press ENTER."
 	# find leaseable crtcs
     drm=($(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune -exec grep -q "^connected$" {}/status \; -exec basename {} \; 2>/dev/null))
-	d=${#drm[@]}
-
-	# this is not working for same reason as the drm lease, change to pulseaudio ?
-	# find audio devices
-	# 	for dev in /sys/devices/pci*/*/sound/card*/input* 
-#	do
-#		spkr[$((s++))]="spkr $(echo "$dev" | sed 's|/sys/[^ ]*sound/card||g')	#- $(cat $dev/name)"
-#	done
-    
+	d=${#drm[@]}    
 
 	# find audio devices
     for card in /sys/class/sound/card*; do
@@ -464,7 +462,13 @@ case "$1" in
             mouse[$((m++))]="usbm $device"
             continue
         fi
-
+        
+        # Class 01 is Audio
+        if grep -q "01" $dev/*/bInterfaceClass 2>/dev/null; then
+            usba[$((a++))]="usba $device"
+            continue
+        fi
+        
         ! [[ ${name,,} =~ .*hub.* ]] && usbd[$((u++))]="usbd $device" && continue
         
 	done
@@ -483,13 +487,14 @@ case "$1" in
 	}
 
 	p=0 # create/update config for devices
- 	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ]
+ 	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ] || [ $a -gt $p ]
 	do
 		[ $d -gt $p ] && cfgs=$(addc "\n$( ([ $p -ge $k ] && [ $p -ge $m ]) && echo '#')${drm[$p]}")
 		[ $s -gt $p ] && cfgs=$(addc "	${spkr[$p]}" )
 		[ $k -gt $p ] && cfgs=$(addc "	${keyboard[$p]}" )
 		[ $m -gt $p ] && cfgs=$(addc "	${mouse[$p]}" )
 		[ $u -gt $p ] && cfgs=$(addc "	${usbd[$p]}" )
+		[ $a -gt $p ] && cfgs=$(addc "	${usba[$p]}" )
 		p=$((p+1))
 	done
 
@@ -643,6 +648,13 @@ case "$1" in
 	sudo systemctl enable multiseat
 
 	;;
+	
+	"--disable") # Restart your computer and return to your default graphics session.
+	systemctl disable multiseat
+    systemctl set-default graphical.target
+	loginctl flush-devices
+	reboot
+	;;
 
     *)
 	echo -e	"$ms github.com/garlett/multiseat \n    argument $1"
@@ -651,6 +663,7 @@ case "$1" in
 		 -c 		Create, review and enable config
 		 -s 		Start drm-lease-manager and compositor services
 
+		 --disable  Restart your computer and return to your default graphics session (without multiseat).
 		 -q 		Quit multiseat
 		 -r [LEASE]  	Restart compositor seat service [with LEASE name or POS]
 		 -d		Start drm-lease-manager
