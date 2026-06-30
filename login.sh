@@ -1,19 +1,17 @@
 #!/bin/bash
 clear
 while true; do
-    read -p "Ingresa tu usuario: " usuario
+    read -p "Enter your username: " usuario
     
+    echo "Nothing will be displayed on the screen while you are entering the password for security reasons."
     if su -c true "$usuario"; then
-        echo "Contraseña correcta. Iniciando escritorio..."
+        echo "Correct password. Starting desktop..."
         
-        # Escribimos el Lease actual y el usuario en el buzón
         echo "$DRM_LEASE $usuario" > /tmp/multiseat_login.fifo
-        
-        # Nos quedamos durmiendo. 
-        # En 1 segundo el servidor leerá el mensaje y nos matará limpiamente.
+        # In 1 second the server will read the message and kill us cleanly.
         sleep 10 
     else
-        echo "Error. Intenta de nuevo."
+        echo "Error. Try again."
         sleep 2
         clear
     fi
