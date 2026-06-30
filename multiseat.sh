@@ -10,9 +10,12 @@
 
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
-guest_login_cmd="/home/login.sh"
+guest_login_cmd="$ms_dir/login.sh"
 guest_login_cmd="xfce4-terminal $( [ -e $guest_login_cmd ] && echo "--fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e $guest_login_cmd") "
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
+MYSELF="$(realpath "$0")"
+MYDIR="${MYSELF%/*}"
+
 
 #echo echo$((e++)) >&2
 
@@ -244,6 +247,26 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 #exit
 
 
+function login_server() {
+    local pipe="/tmp/multiseat_login.fifo"
+    [[ ! -p $pipe ]] && mkfifo $pipe
+    chmod 666 $pipe # allow kiosks to write here
+
+    echo -e "$ms Starting login server..."
+    
+    while true; do
+        if read line < $pipe; then
+			# The message will be "LEASE USER" (e.g., "card0-HDMI-A-1 jose")
+            lease=$(echo "$line" | awk '{print $1}')
+            usuario=$(echo "$line" | awk '{print $2}')
+            
+            echo -e "$ms Login request received: $usuario in $lease"
+            
+            start_seat2 "$lease" "$usuario" &
+        fi
+    done
+}
+
 
 
 case "$1" in
@@ -283,7 +306,10 @@ case "$1" in
 	echo -e "$wb creating build+cfg directories ..."
 	mkdir -p $ms_dir
 	mkdir -m 2750 /etc/multiseat
+	cp $MYDIR/login.sh $ms_dir/login.sh #Copying login.sh to a more appropriate place
 	chown -R :users /etc/multiseat
+	
+	
 	;;
 
 
@@ -594,6 +620,7 @@ case "$1" in
 
 	systemd-run $0 -G	# start guard service
 	. $0 -d 		# start dlm-lease-manager services
+	systemd-run --unit=multiseat-login-server $0 -login_server
 	. $0 -r "" "guest" 	# start compositor seats services
 
 	[[ "$1" == "-s" ]] && read -p " waiting to stop root session ..."
@@ -654,6 +681,9 @@ case "$1" in
     systemctl set-default graphical.target
 	loginctl flush-devices
 	reboot
+	;;
+	"-login_server")
+		login_server
 	;;
 
     *)
