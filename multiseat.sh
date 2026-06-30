@@ -11,7 +11,7 @@
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
 guest_login_cmd="$ms_dir/login.sh"
-guest_login_cmd="xfce4-terminal $( [ -e $guest_login_cmd ] && echo "--fullscreen --hide-menubar --hide-scrollbar --zoom=4 -e $guest_login_cmd") "
+guest_login_cmd="alacritty --config-file $ms_dir/alacritty.toml -e $ms_dir/login.sh"
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
 MYSELF="$(realpath "$0")"
 MYDIR="${MYSELF%/*}"
@@ -309,7 +309,15 @@ case "$1" in
 	cp $MYDIR/login.sh $ms_dir/login.sh #Copying login.sh to a more appropriate place
 	chown -R :users /etc/multiseat
 	
-	
+	#create config for alacritty to use for login.sh 
+		cat <<- EOF > "$ms_dir/alacritty.toml"
+	[window]
+	startup_mode = "Fullscreen"
+
+	[font]
+	size = 28
+	EOF
+	chmod 644 "$ms_dir/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
 	;;
 
 
@@ -320,7 +328,7 @@ case "$1" in
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols freerdp patch neatvnc \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
-		gtk-layer-shell pcmanfm-qt qt6-svg xfce4-terminal || exit 40 # swayidle 
+		gtk-layer-shell pcmanfm-qt qt6-svg || exit 40 # swayidle 
 
 	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt  ## maybe pacman --somenthing_like__install_required
 	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
