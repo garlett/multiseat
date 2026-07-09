@@ -6,7 +6,7 @@
 
 # !!!!!!!!! IMPORTANT !!!!!!!!!!!!
 # until reboot is working, uncomment the line bellow and enable the service before each boot test
-# [[ "-S" == "$1" ]] && systemctl disable multiseat 
+#[[ "-S" == "$1" ]] && systemctl disable multiseat 
 
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
@@ -558,7 +558,8 @@ case "$1" in
 		do
 			unset dev user usb
 			seat_devs="$( loginctl seat-status seat-$card )" # avoid re-attach ( spare writes on /etc/udev/rules.d/* )
-			for dev in /sys/devices/pci*/*/{,*/}drm/card*/$card $( get_conf2 devs $card )
+            card_path=$( find /sys/devices/pci* -type d -path "*/drm/card*/$card" -prune )
+			for dev in $card_path $( get_conf2 devs $card )
 			do
 				[[ "$seat_devs" != *$dev* ]] && [[ $dev != *firmware* ]] && loginctl attach seat-$card $dev
 			done #							^^ obsolete?
