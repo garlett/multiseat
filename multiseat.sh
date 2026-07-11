@@ -297,7 +297,7 @@ case "$1" in
 	echo -e "$wb soft linking library files from /usr/local/... to /usr/..."
 	cd /usr/
 	mkdir -p include/libdlmclient local/lib/pkgconfig 
-	for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so.0,libtoml.so,libwlroots-0.18.so}
+	for file in include/{libdlmclient/dlmclient.h,toml.h} lib/pkgconfig/{libdlmclient.pc,libtoml.pc} lib/{libdlmclient.so.0,libtoml.so}
 	do
 		! [ -e $file ] && ( ln -s /usr/local/$file $( dirname $file ) || exit 30 )
 	done
@@ -402,7 +402,7 @@ case "$1" in
 		if [ -e meson.build ]
 		then
 			[ -e build/ ] && rm -R build/
-			meson build || exit 70
+			meson setup build --force-fallback-for=wlroots || exit 70
 			ninja -C build || exit 80
 			ninja -C build install || exit 90
 		fi
