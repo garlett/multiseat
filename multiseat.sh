@@ -668,6 +668,10 @@ case "$1" in
     "-a") # auto
 	$0 -b
 	$0 -c
+	$0 --enable
+
+	;;
+	"--enable")
 	if [[ "$(systemctl get-default)" == "graphical.target" ]]; then 
 		echo -e "$yellow WARNING: $white Your system is configured to use \"graphical.target\", which most likely interferes with the multiseat system."
 		echo "It is highly recommended that you change it with the following command: 'sudo systemctl set-default multi-user.target'."
@@ -682,7 +686,6 @@ case "$1" in
 		fi
 	fi 
 	sudo systemctl enable multiseat
-
 	;;
 	
 	"--disable") # Restart your computer and return to your default graphics session.
@@ -701,7 +704,8 @@ case "$1" in
 		 -b [ID]	[Git clone, link and] build
 		 -c 		Create, review and enable config
 		 -s 		Start drm-lease-manager and compositor services
-
+		
+		--enable    Configure things so that the multiseat is up and running on your next reboot
 		 --disable  Restart your computer and return to your default graphics session (without multiseat).
 		 -q 		Quit multiseat
 		 -r [LEASE]  	Restart compositor seat service [with LEASE name or POS]
