@@ -11,7 +11,7 @@
 ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
 guest_login_cmd="$ms_dir/login.sh"
-guest_login_cmd="alacritty --config-file $ms_dir/alacritty.toml -e $ms_dir/login.sh"
+guest_login_cmd="alacritty --config-file /etc/multiseat/alacritty.toml -e $ms_dir/login.sh"
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
 MYSELF="$(realpath "$0")"
 MYDIR="${MYSELF%/*}"
@@ -305,19 +305,19 @@ case "$1" in
 		
 	echo -e "$wb creating build+cfg directories ..."
 	mkdir -p $ms_dir
-	mkdir -m 2750 /etc/multiseat
+	mkdir -m 755 /etc/multiseat
 	cp $MYDIR/login.sh $ms_dir/login.sh #Copying login.sh to a more appropriate place
 	chown -R :users /etc/multiseat
 	
 	#create config for alacritty to use for login.sh 
-		cat <<- EOF > "$ms_dir/alacritty.toml"
+		cat <<- EOF > "/etc/multiseat/alacritty.toml"
 	[window]
 	startup_mode = "Fullscreen"
 
 	[font]
 	size = 28
 	EOF
-	chmod 644 "$ms_dir/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
+	chmod 644 "/etc/multiseat/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
 	;;
 
 
