@@ -1,5 +1,5 @@
 # Install and run
-cd && wget https://raw.githubusercontent.com/garlett/multiseat/wlroots-0.20/{multiseat.sh,LICENSE} && chmod 770 multiseat.sh && ./multiseat.sh -a
+`curl -fsSL https://raw.githubusercontent.com/Sturm0/multiseat/wlroots-0.20/install_and_run.sh | bash`
 
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.

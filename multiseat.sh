@@ -8,10 +8,9 @@
 # until reboot is working, uncomment the line bellow and enable the service before each boot test
 #[[ "-S" == "$1" ]] && systemctl disable multiseat 
 
-ms_dir="/home/multiseat"
 wait_time=0.31s	# time between exist checks 
-guest_login_cmd="$ms_dir/login.sh"
-guest_login_cmd="alacritty --config-file /etc/multiseat/alacritty.toml -e $ms_dir/login.sh"
+guest_login_cmd="/usr/local/bin/login.sh"
+guest_login_cmd="alacritty --config-file /usr/local/etc/multiseat/alacritty.toml -e $guest_login_cmd"
 default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
 MYSELF="$(realpath "$0")"
 MYDIR="${MYSELF%/*}"
@@ -70,7 +69,7 @@ done
 
 # config file name based on current hardware path configuration
 conf=$(find /sys/devices/pci* -type d -path "*/drm/card*/card*-*" -prune)
-[[ "$conf" != "" ]] && conf=/etc/multiseat/_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
+[[ "$conf" != "" ]] && conf=/usr/local/etc/multiseat/_$( basename -a $conf | tr -cd "[:alnum:]" ).conf
 conf=${conf//card/}
 
 [[ "$conf" != "" ]] && ln -sf $conf /tmp/multiseat.conf
@@ -124,7 +123,7 @@ function start_seat2(){  # $1 lease    $2 user
 		fi
 		 
 		mkdir -p $user_home/{Desktop,.config}
-		ln -s /etc/multiseat/labwc/ $user_home/.config/
+		ln -s /usr/local/etc/multiseat/labwc/ $user_home/.config/
 		chown $user: -R $user_home
 	fi
 
@@ -304,20 +303,19 @@ case "$1" in
 	# ? change this to ldconfig or PKGBUILD (pacman can handle dependencies)(needs noupdate on pacman.conf)
 		
 	echo -e "$wb creating build+cfg directories ..."
-	mkdir -p $ms_dir
-	mkdir -m 755 /etc/multiseat
-	cp $MYDIR/login.sh $ms_dir/login.sh #Copying login.sh to a more appropriate place
-	chown -R :users /etc/multiseat
+	mkdir -p /usr/local/src/multiseat
+	mkdir -m 755 /usr/local/etc/multiseat
+	chown -R :users /usr/local/etc/multiseat
 	
 	#create config for alacritty to use for login.sh 
-		cat <<- EOF > "/etc/multiseat/alacritty.toml"
+		cat <<- EOF > "/usr/local/etc/multiseat/alacritty.toml"
 	[window]
 	startup_mode = "Fullscreen"
 
 	[font]
 	size = 28
 	EOF
-	chmod 644 "/etc/multiseat/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
+	chmod 644 "/usr/local/etc/multiseat/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
 	;;
 
 
@@ -331,7 +329,7 @@ case "$1" in
 		gtk-layer-shell pcmanfm-qt qt6-svg || exit 40 # swayidle 
 
 	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt  ## maybe pacman --somenthing_like__install_required
-	# download sfwbar config to /etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
+	# download sfwbar config to /usr/local/etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
     ;;
 
 
@@ -348,9 +346,9 @@ case "$1" in
 		exit
 	fi
 
-	[ -d $ms_dir ] || ( $0 -l ; $0 -gp ) # links and pacman
+	[ -d /usr/local/src/multiseat ] || ( $0 -l ; $0 -gp ) # links and pacman
 
-	cd $ms_dir || exit 50
+	cd /usr/local/src/multiseat || exit 50
 
 	href=( 'github.com/cktan/tomlc99' 'gerrit.automotivelinux.org/gerrit/src/drm-lease-manager' \
         'gitlab.freedesktop.org/wlroots/wlroots' 'github.com/labwc/labwc' \
@@ -384,8 +382,10 @@ case "$1" in
 		echo -e "$wb applying configs ...."
 
 	       	[[ "$name" == "tomlc99" ]] && mv libtoml.pc{.sample,}
-		[[ "$name" == "labwc" ]] && ln -s $ms_dir/wlroots $ms_dir/labwc/subprojects/
-		[[ "$name" == "sfwbar" ]] && ! grep -q idle_timer $ms_dir/sfwbar/config/sfwbar.config && sed -i 's/Function("SfwbarInit") {/Module("idle")\nTriggerAction "idle_timer", Exec "wlopm --off *"\nTriggerAction "idle_resume", Exec "wlopm --on *"\nFunction("SfwbarInit") {\n\tIdleTimeout "idle_timer", "420"\n\tExec "wlopm --on *"/' $ms_dir/sfwbar/config/sfwbar.config # ugly --- maybe lbcryon could make it native, or this should not be in multiseat
+		[[ "$name" == "labwc" ]] && ln -s /usr/local/src/multiseat/wlroots /usr/local/src/multiseat/labwc/subprojects/
+
+		[[ "$name" == "sfwbar" ]] && ! grep -q idle_timer /usr/local/src/multiseat/sfwbar/config/sfwbar.config && sed -i 's/Function("SfwbarInit") {/Module("idle")\nTriggerAction "idle_timer", Exec "wlopm --off *"\nTriggerAction "idle_resume", Exec "wlopm --on *"\nFunction("SfwbarInit") {\n\tIdleTimeout "idle_timer", "420"\n\tExec "wlopm --on *"/' /usr/local/src/multiseat/sfwbar/config/sfwbar.config	# ugly --- maybe lbcryon could make it native, or this should not be in multiseat
+
 	fi
 
 	
@@ -412,7 +412,7 @@ case "$1" in
 
 
     "-p")
-	cd $ms_dir/wlroots || exit 50
+	cd /usr/local/src/multiseat/wlroots || exit 50
 	# git reset ? checkout ? 18.2 ?
 	git remote add -f b "https://gitlab.freedesktop.org/garlett/wlroots-lease-multiseat.git"
 	git remote update
@@ -719,7 +719,7 @@ case "$1" in
 		 Type 'systemctl enable multiseat' to run at boot and replace agetty
 		 After system upgrades, you may need to run -b 1 and -c
 		 After update multiseat.sh, its recommended to run -l
-		 Before download again run:  rm -R $ms_dir
+	     Before download again run:  rm -R /usr/local/src/multiseat
 		 Kiosk app will fail: without connected drm output
 		 Last error: echo \$?
 		EOF
