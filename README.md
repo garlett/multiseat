@@ -1,5 +1,5 @@
 # Install and run
-`curl -fsSL https://raw.githubusercontent.com/Sturm0/multiseat/wlroots-0.20/install_and_run.sh | bash`
+`sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sturm0/multiseat/wlroots-0.20/install_and_run.sh)"`
 
 # multiseat
 multiseat using single graphics card gpu, without nesting like xephr and others.
