@@ -132,8 +132,8 @@ function start_seat2(){  # $1 lease    $2 user
  	user_id=$( id -u $user )
   	envs="--uid=$user_id --property=UMask=0006 " # 666 - 006 -> 660
 
-	wait_files /var/local/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
-	chown $user: /var/local/run/drm-lease-manager/$1{,.lock} || exit 20
+	wait_files /var/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
+	chown $user: /var/run/drm-lease-manager/$1{,.lock} || exit 20
 
 	sys_layout=$(localectl status | awk '/X11 Layout/ {print $3}')
     sys_layout=${sys_layout:-us}
@@ -592,7 +592,7 @@ case "$1" in
 
     "-d") # dlm transient service
 	
-	rm /var/local/run/drm-lease-manager/* 2> /dev/null
+	rm /var/run/drm-lease-manager/* 2> /dev/null
 
 	wait_files "/dev/dri/" "$( grep "^card[0-9]" $conf -o )"  # wait configured cards
 	
@@ -603,7 +603,13 @@ case "$1" in
 		# dlm only outputs when ran from terminal with no redirects
 	done #--property=RestartSec=1s --property=Restart=always /usr/local/bin/
 
-	wait_files "/var/local/run/drm-lease-manager/" "$( grep "^card*" $conf )" # wait configured crtcs 
+	wait_files "/var/run/drm-lease-manager/" "$( grep "^card*" $conf )" # wait configured crtcs 
+
+    if ! wait_files "/var/run/drm-lease-manager/" "$( grep "^card*" $conf )"; then
+		echo "<3>CRITICAL ERROR: DRM leases could not be created! The video card or driver does not support it." >&2
+		exit 1
+	fi    
+
 	;;
 
 
@@ -643,7 +649,7 @@ case "$1" in
     "-q" | "-Q") # quit services
 	echo -e "$ms Stopping ... "
 	systemctl stop "multiseat-*" "dlm-*"
-	rm /var/local/run/drm-lease-manager/* >& /dev/null
+	rm /var/run/drm-lease-manager/* >& /dev/null
 	
 	if [[ "$1" == "-q" ]] # looks better with service
 	then
