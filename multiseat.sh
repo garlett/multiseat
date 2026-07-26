@@ -402,7 +402,7 @@ case "$1" in
 		if [ -e meson.build ]
 		then
 			[ -e build/ ] && rm -R build/
-			meson setup build --force-fallback-for=wlroots || exit 70
+			meson setup build --force-fallback-for=wlroots --localstatedir=/var || exit 70
 			ninja -C build || exit 80
 			ninja -C build install || exit 90
 		fi
