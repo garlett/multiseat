@@ -590,15 +590,13 @@ case "$1" in
 
 
     "-d") # dlm transient service
-	
-	rm /var/run/drm-lease-manager/* 2> /dev/null
 
 	wait_files "/dev/dri/" "$( grep "^card[0-9]" $conf -o )"  # wait configured cards
 	
 	for card in /dev/dri/card*
 	do
 		echo -e "$ms Starting drm-lease-manager services at $card ... "	
-		systemd-run $dlm_log --unit=dlm-$( basename $card ) drm-lease-manager $card
+		systemd-run $dlm_log --property=RuntimeDirectory=drm-lease-manager --unit=dlm-$( basename $card ) drm-lease-manager $card
 		# dlm only outputs when ran from terminal with no redirects
 	done #--property=RestartSec=1s --property=Restart=always /usr/local/bin/
 
