@@ -646,7 +646,6 @@ case "$1" in
     "-q" | "-Q") # quit services
 	echo -e "$ms Stopping ... "
 	systemctl stop "multiseat-*" "dlm-*"
-	rm /var/run/drm-lease-manager/* >& /dev/null
 	
 	if [[ "$1" == "-q" ]] # looks better with service
 	then
