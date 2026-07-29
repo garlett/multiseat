@@ -95,7 +95,7 @@ function start_seat2(){  # $1 lease    $2 user
 	then
 		if [[ $2 == 'guest' ]]
 		then
-			compositor="/usr/local/bin/labwc -c  /usr/local/etc/multiseat/login/alacritty.toml"
+			compositor=( /usr/local/bin/labwc -C /usr/local/etc/multiseat/login )
 		fi
 		user=${1/card/u}
 		user=${user,,}
@@ -142,7 +142,7 @@ function start_seat2(){  # $1 lease    $2 user
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
 	
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" $compositor $param #-dVVV
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" "${compositor[@]}" $param #-dVVV
 				# sleep: wlroots or systemd is not openning session on first try
 	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
 }
