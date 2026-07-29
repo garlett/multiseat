@@ -6,14 +6,11 @@
 
 # !!!!!!!!! IMPORTANT !!!!!!!!!!!!
 # until reboot is working, uncomment the line bellow and enable the service before each boot test
-#[[ "-S" == "$1" ]] && systemctl disable multiseat 
+[[ "-S" == "$1" ]] && systemctl disable multiseat 
 
 wait_time=0.31s	# time between exist checks 
-guest_login_cmd="/usr/local/bin/login.sh"
-guest_login_cmd="alacritty --config-file /usr/local/etc/multiseat/alacritty.toml -e $guest_login_cmd"
-default_compositor="labwc ; sfwbar ; pcmanfm-qt --desktop" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
-MYSELF="$(realpath "$0")"
-MYDIR="${MYSELF%/*}"
+guest_login_cmd="alacritty --config-file /usr/local/etc/multiseat/login/alacritty.toml -e /usr/local/bin/login.sh"
+default_compositor="labwc" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
 
 
 #echo echo$((e++)) >&2
@@ -79,7 +76,8 @@ conf=${conf//card/}
 
 
 function start_seat2(){  # $1 lease    $2 user
-
+	local compositor=( $default_compositor )
+	
 	# do not restart when running from inside seat
 	[[ "$XDG_SEAT" == "seat-$1" ]] && exit
 	
@@ -88,19 +86,16 @@ function start_seat2(){  # $1 lease    $2 user
 	systemctl stop multiseat-$1 2> /dev/null
 	systemctl reset-failed
 
-	# get seat compositor and list of apps 
+
 	IFS=\;
-	apps=( $( get_conf2 open $1 ) )
-	comp=( $( get_conf2 comp $1 ) )
-	[[ ${comp[@]} == "" ]] && comp=( $default_compositor )
+	#~ comp=( $default_compositor )
 
 	# set default user 
 	if [[ "$2" == "" ]] || [[ $2 == 'guest' ]]
 	then
 		if [[ $2 == 'guest' ]]
 		then
-			apps=( $guest_login_cmd )
-			comp=( ${comp[0]} sfwbar ) # change to greeter with idle_timer display turn off
+			compositor="/usr/local/bin/labwc -c  /usr/local/etc/multiseat/login/alacritty.toml"
 		fi
 		user=${1/card/u}
 		user=${user,,}
@@ -114,7 +109,7 @@ function start_seat2(){  # $1 lease    $2 user
 	if [ ! -d $user_home/.config/labwc ]
 	then
 		useradd $user > /dev/null 2>&1 # --no-user-group
-
+	
 		user_home="$( eval echo ~$user )"
 		if [ ! -d $user_home ]
 		then 
@@ -123,20 +118,19 @@ function start_seat2(){  # $1 lease    $2 user
 		fi
 		 
 		mkdir -p $user_home/{Desktop,.config}
-		ln -s /usr/local/etc/multiseat/labwc/ $user_home/.config/
 		chown $user: -R $user_home
 	fi
 
 	resta="--property=RestartSec=1s --property=Restart=always "
-	param="$( [[ ${comp[0]} == "weston" ]] && echo --drm-lease=$1 ) "
+	param="$( [[ $default_compositor == "weston" ]] && echo --drm-lease=$1 ) "
  	user_id=$( id -u $user )
-  	envs="--uid=$user_id --property=UMask=0006 " # 666 - 006 -> 660
+  	envs="--uid=$user_id --property=UMask=0006" # 666 - 006 -> 660
 
 	wait_files /var/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/run/drm-lease-manager/$1{,.lock} || exit 20
 
 	sys_layout=$(localectl status | awk '/X11 Layout/ {print $3}')
-    sys_layout=${sys_layout:-us}
+    	sys_layout=${sys_layout:-us}
 
 	# compositor
 	systemctl set-environment \
@@ -147,28 +141,10 @@ function start_seat2(){  # $1 lease    $2 user
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
-
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" ${comp[0]} $param #-dVVV
+	
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" $compositor $param #-dVVV
 				# sleep: wlroots or systemd is not openning session on first try
 	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
-
-	envs+="--property=After=multiseat-$1.service "
-	envs+="--property=PartOf=multiseat-$1.service "
-	envs+="--setenv=XDG_CURRENT_DESKTOP=wlroots "
-	envs+="--setenv=WAYLAND_DISPLAY=wayland-0 " # pam_systemd: cannot use one guest user, because conflicts on this 4 lines
- 	envs+="--setenv=XDG_RUNTIME_DIR=/run/user/$user_id " 
-	envs+="--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$user_id/bus "
-	envs+="--setenv=DISPLAY=$( basename $( find /tmp/.X11-unix/ -maxdepth 1 -user $user ) | tr X : ) "
-	
- 	for serv in "${comp[@]:1}"
- 	do
-		systemd-run --unit=multiseat-$1-$(echo $serv | awk '{print $1;}')-$RANDOM $envs $resta $serv
-	done
-
-	for app in "${apps[@]}"
-	do
-		systemd-run --unit=multiseat-$1-$(echo $app  | awk '{print $1;}')-$RANDOM $envs $app 
-	done
 }
 
 
@@ -197,14 +173,6 @@ function get_conf2(){ #  $1 field    $2 card || seat pos || ""
 			
 			"card")
 				[[ $1 == "card" ]] && echo -n "" ${cfg}
-				;;
-
-			"comp")
-				[[ $1 == "comp" ]] && echo -n "" ${cfg:5}
-				;;
-
-			"open")
-				[[ $1 == "open" ]] && echo -n "" ${cfg:5}
 				;;
 			
 			"spkr")
@@ -306,16 +274,6 @@ case "$1" in
 	mkdir -p /usr/local/src/multiseat
 	mkdir -m 755 /usr/local/etc/multiseat
 	chown -R :users /usr/local/etc/multiseat
-	
-	#create config for alacritty to use for login.sh 
-		cat <<- EOF > "/usr/local/etc/multiseat/alacritty.toml"
-	[window]
-	startup_mode = "Fullscreen"
-
-	[font]
-	size = 28
-	EOF
-	chmod 644 "/usr/local/etc/multiseat/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
 	;;
 
 
@@ -333,7 +291,7 @@ case "$1" in
     ;;
 
 
-    "-g" | "-b") # $2 app index
+"-g" | "-b") # $2 app index
 
 	if [[ "$2" == "" ]]
 	then 
@@ -408,8 +366,7 @@ case "$1" in
 		fi
 	fi
 	chmod 755 -R .
-	;;
-
+;;
 
     "-p")
 	cd /usr/local/src/multiseat/wlroots || exit 50
@@ -509,7 +466,6 @@ case "$1" in
 
 	# load $conf
 	cfgs=$( cat $conf 2> /dev/null )
-	[[ "$cfgs" == ""  ]] && cfgs="# comp $default_compositor # open $guest_login_cmd"
 
 
 	# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
