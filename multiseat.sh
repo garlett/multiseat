@@ -109,7 +109,7 @@ function start_seat2(){  # $1 lease    $2 user
 
 	# config: new user, user home folder, labwc default link config
 	user_home="$( eval echo ~$user )"
-	if [ ! -d $user_home/.config/labwc ]
+	if [ ! -d $user_home/Desktop ]
 	then
 		useradd $user > /dev/null 2>&1 # --no-user-group
 
@@ -120,8 +120,7 @@ function start_seat2(){  # $1 lease    $2 user
 			usermod $user --home $user_home
 		fi
 		 
-		mkdir -p $user_home/{Desktop,.config}
-		ln -s /etc/multiseat/labwc/ $user_home/.config/
+		mkdir -p $user_home/Desktop
 		chown $user: -R $user_home
 	fi
 
