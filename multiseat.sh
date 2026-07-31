@@ -10,12 +10,7 @@
 
 wait_time=0.31s	# time between exist checks 
 guest_login_cmd="alacritty --config-file /usr/local/etc/multiseat/login/alacritty.toml -e /usr/local/bin/login.sh"
-default_compositor="labwc" #; swayidle -w timeout 420 'wlopm --off \*' resume 'wlopm --on \*'
-
-
-#echo echo$((e++)) >&2
-
-#XDG_RUNTIME_DIR=/run/user/1060 xfce4-terminal --fullscreen -e 'watch -n.1 "dmesg -T | tail -n 25"'
+default_compositor="labwc"
 
 if [ "$EUID" -ne 0 ]
 then 
@@ -88,7 +83,6 @@ function start_seat2(){  # $1 lease    $2 user
 
 
 	IFS=\;
-	#~ comp=( $default_compositor )
 
 	# set default user 
 	if [[ "$2" == "" ]] || [[ $2 == 'guest' ]]
@@ -103,35 +97,30 @@ function start_seat2(){  # $1 lease    $2 user
 		user=$2
 	fi
 	IFS=$oIFS
-
-	# config: new user, user home folder, labwc default link config
-	user_home="$( eval echo ~$user )"
-	if [ ! -d $user_home/.config/labwc ]
-	then
-		useradd $user > /dev/null 2>&1 # --no-user-group
 	
-		user_home="$( eval echo ~$user )"
-		if [ ! -d $user_home ]
-		then 
-			user_home=/tmp/$user 
-			usermod $user --home $user_home
-		fi
-		 
-		mkdir -p $user_home/{Desktop,.config}
-		chown $user: -R $user_home
+	#Obtener la ruta del home consultando directamente al sistema
+	user_home=$(getent passwd "$user" | cut -d: -f6)
+
+	#Si la variable está vacía, el usuario temporal no existe
+	if [ -z "$user_home" ]; then
+		user_home=/tmp/"$user"
+		useradd --system --no-user-group --no-create-home --home-dir "$user_home" "$user" 2>/dev/null
 	fi
+	
 
 	resta="--property=RestartSec=1s --property=Restart=always "
 	param="$( [[ $default_compositor == "weston" ]] && echo --drm-lease=$1 ) "
  	user_id=$( id -u $user )
   	envs="--uid=$user_id --property=UMask=0006" # 666 - 006 -> 660
-
+	
 	wait_files /var/run/drm-lease-manager/ "$1 $1.lock" # || exit 19
 	chown $user: /var/run/drm-lease-manager/$1{,.lock} || exit 20
 
 	sys_layout=$(localectl status | awk '/X11 Layout/ {print $3}')
     	sys_layout=${sys_layout:-us}
 
+	user_id=$( id -u $user )
+	
 	# compositor
 	systemctl set-environment \
 		SEATD_VTBOUND=0 \
@@ -141,8 +130,8 @@ function start_seat2(){  # $1 lease    $2 user
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
-	
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" "${compositor[@]}" $param #-dVVV
+
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" setpriv --ambient-caps -all "${compositor[@]}" $param #-dVVV
 				# sleep: wlroots or systemd is not openning session on first try
 	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
 }
