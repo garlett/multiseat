@@ -459,7 +459,7 @@ case "$1" in
 	
 	# 1. Armar el "pool" de dispositivos disponibles
 	available_devs=()
-	for dev in "${spkr[@]}" "${keyboard[@]}" "${mouse[@]}" "${usba[@]}"; do
+	for dev in "${spkr[@]}" "${keyboard[@]}" "${mouse[@]}" "${usba[@]} ${usbd[@]}"; do
 		available_devs+=("$dev")
 	done
 
