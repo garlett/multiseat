@@ -2,15 +2,12 @@
 pacman -S --needed git
 git clone -b wlroots-0.20 https://github.com/Sturm0/multiseat.git
 cd multiseat
-cp ./multiseat.sh /usr/local/bin/multiseat.sh
-cp ./login/login.sh 	  /usr/local/bin/login.sh
-mkdir -p /usr/local/etc/multiseat/login
-cp ./login/alacritty.toml /usr/local/etc/multiseat/login/alacritty.toml
-cp ./login/autostart /usr/local/etc/multiseat/login/autostart
-cp ./autostart /etc/xdg/labwc/autostart
-chmod +x /usr/local/bin/multiseat.sh
-chmod +x /usr/local/bin/login.sh
-chmod 644 "/usr/local/etc/multiseat/login/alacritty.toml" # me aseguro que el usuario del "kiosco" pueda leerlo
 
-/usr/local/bin/multiseat.sh -a 
+install -Dm755 ./multiseat.sh /usr/local/bin/multiseat.sh
+install -Dm755 ./login/login.sh /usr/local/bin/login.sh
+install -Dm644 ./login/alacritty.toml /usr/local/etc/multiseat/login/alacritty.toml
+install -Dm644 ./login/autostart /usr/local/etc/multiseat/login/autostart
+install -Dm644 ./autostart /etc/xdg/labwc/autostart
+
+/usr/local/bin/multiseat.sh -a
 
