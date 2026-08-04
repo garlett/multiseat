@@ -130,9 +130,10 @@ function start_seat2(){  # $1 lease    $2 user
 		DRM_LEASE=$1 \
 		usbdvs="$( get_conf2 usbd $1 )" \
 		open=""
-
-	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" setpriv --ambient-caps -all "${compositor[@]}" $param #-dVVV
+		
+	#systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" "${compositor[@]}" $param #-dVVV
 				# sleep: wlroots or systemd is not openning session on first try
+	systemd-run $envs $resta --unit=multiseat-$1 --property=PAMName=login --property=ExecStartPre="/bin/sleep .1" setpriv --ambient-caps -all "${compositor[@]}" $param #-dVVV
 	wait_files /run/user/$user_id/ wayland-0{,.lock} || exit 25
 }
 
@@ -273,7 +274,7 @@ case "$1" in
 		fakeroot wayland libxkbcommon libinput libunwind pixman cairo libjpeg-turbo libwebp mesa libegl \
 		libgles pango lcms2 mtdev libva colord pipewire wayland-protocols patch usbutils \
 		libxml2 glib2 hwdata libdisplay-info libliftoff xorg-xwayland libxcb xcb-util-renderutil xcb-util-wm \
-		gtk-layer-shell pcmanfm-qt qt6-svg || exit 40 # swayidle 
+		gtk-layer-shell pcmanfm-qt qt6-svg libnewt || exit 40 # swayidle 
 
 	# redo this with requeriments for: wlroots, labwc, sfwbar, pcmanfm-qt  ## maybe pacman --somenthing_like__install_required
 	# download sfwbar config to /usr/local/etc/multiseat/{sfwbar/,labwc/} and set config location as argument?
@@ -455,32 +456,84 @@ case "$1" in
 
 	# load $conf
 	cfgs=$( cat $conf 2> /dev/null )
-
-
-	# reads global var $cfgs, updates or appends it with config from $1, then outputs on stdout
-	function addc(){  # $1 new config
-		arg=${1%%#- *} 					# remove comments from arg
-		echo "$cfgs" | sed "s|$arg.*$|$1|"		# output updated $cfgs
-		arg=${arg//'\n'/}				# remove newline from arg
-		[[ "$cfgs" == *${arg:1}* ]] || echo "$1"	# if new cfg then append
-	}
-
-	p=0 # create/update config for devices
- 	while [ $d -gt $p ] || [ $s -gt $p ] || [ $k -gt $p ] || [ $m -gt $p ] || [ $u -gt $p ] || [ $a -gt $p ]
-	do
-		[ $d -gt $p ] && cfgs=$(addc "\n$( ([ $p -ge $k ] && [ $p -ge $m ]) && echo '#')${drm[$p]}")
-		[ $s -gt $p ] && cfgs=$(addc "	${spkr[$p]}" )
-		[ $k -gt $p ] && cfgs=$(addc "	${keyboard[$p]}" )
-		[ $m -gt $p ] && cfgs=$(addc "	${mouse[$p]}" )
-		[ $u -gt $p ] && cfgs=$(addc "	${usbd[$p]}" )
-		[ $a -gt $p ] && cfgs=$(addc "	${usba[$p]}" )
-		p=$((p+1))
+	
+	# 1. Armar el "pool" de dispositivos disponibles
+	available_devs=()
+	for dev in "${spkr[@]}" "${keyboard[@]}" "${mouse[@]}" "${usba[@]}"; do
+		available_devs+=("$dev")
 	done
 
-	#save $conf
+	cfgs=""
+
+	# 3. Iterar por cada asiento (monitor) detectado
+	for seat in "${drm[@]}"; do
+		cfgs+="\n${seat}\n"
+		
+		# Si ya no quedan dispositivos para asignar, salteamos el menú
+		if [ ${#available_devs[@]} -eq 0 ]; then
+			continue
+		fi
+		
+		# Armar los argumentos para el checklist de whiptail
+		checklist_args=()
+		for i in "${!available_devs[@]}"; do
+			full_line="${available_devs[$i]}"
+			
+			# Separar el TAG (ej: "spkr 0000:00...") de la descripción (ej: "#- Generic")
+			tag="${full_line%%#-*}"
+			desc="#-${full_line#*#-}"
+			
+			# Limpiar espacios en blanco al final del tag para evitar problemas
+			tag=$(echo "$tag" | sed 's/ *$//')
+			
+			checklist_args+=("$tag" "$desc" "OFF")
+		done
+		
+		# Mostrar el menú de whiptail
+		# Usamos 3>&1 1>&2 2>&3 para capturar el stderr (donde whiptail imprime el resultado)
+		selected_tags=$(whiptail --title "----- Asiento $seat ----" \
+			--checklist "Marque los dispositivos que vaya a usar en este asiento. Para moverse por el menú use las flechas direccionales (↑,↓) y la barra espaceadora para seleccionar una opción .\nCuando termine, presione ENTER para pasar al próximo." \
+			22 150 12 "${checklist_args[@]}" 3>&1 1>&2 2>&3)
+		
+		# Si el usuario presiona "Cancelar" o la tecla ESC
+		if [ $? -ne 0 ]; then
+			echo -e "$ms Configuración cancelada por el usuario."
+			exit 1
+		fi
+		
+		# 4. Procesar las selecciones y actualizar el pool
+		# whiptail devuelve los tags entre comillas: "spkr 0000" "usbk 0000"
+		eval "selected_array=($selected_tags)"
+		
+		new_available_devs=()
+		for dev in "${available_devs[@]}"; do
+			dev_tag=$(echo "${dev%%#-*}" | sed 's/ *$//')
+			is_selected=0
+			
+			for sel in "${selected_array[@]}"; do
+				if [[ "$dev_tag" == "$sel" ]]; then
+					is_selected=1
+					# Agregar al string de configuración con la indentación original
+					cfgs+="	${dev}\n"
+					break
+				fi
+			done
+			
+			# Si NO fue seleccionado, lo guardamos para el menú del próximo asiento
+			if [ $is_selected -eq 0 ]; then
+				new_available_devs+=("$dev")
+			fi
+		done
+		
+		# Actualizar el pool de dispositivos para la próxima iteración
+		available_devs=("${new_available_devs[@]}")
+	done
+
+	# Guardar en el archivo final
 	echo -e "$cfgs" > /tmp/multiseat_cfg.tmp
-	[[ "$1" == "-C"  ]] && echo -e "$ms now you should edit $conf ..." || sleep 2s && nano /tmp/multiseat_cfg.tmp
 	mv /tmp/multiseat_cfg.tmp $conf
+    echo -e "$ms Configuración finalizada y guardada en $conf"
+
 	;;
 
 
