@@ -16,7 +16,7 @@ Currently using with 4 seats on nvdia gf7300 and amd R5-230
 # How to configure labwc on this multiseat setup
 
 `install_and_run.sh` places a configuration file in `/etc/xdg/labwc`. This file is used by any user whose `~/.config` file does not contain a `labwc` folder.
-If you want to customize autostart, `rc.xml`, environment, etc. at the user level, create a `labwc` directory in `~/.config`. The script relies on the default behavior of `labwc`. For more information, see: https://labwc.github.io/labwc-config.5.html
+If you want to customize autostart, `rc.xml`, environment, etc. at the user level, create a `labwc` directory in `~/.config`. For more information, see: https://labwc.github.io/labwc-config.5.html
 
 ***Need help on refering this repo on multi seat tutorials.***
 
