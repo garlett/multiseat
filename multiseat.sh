@@ -9,7 +9,6 @@
 [[ "-S" == "$1" ]] && systemctl disable multiseat 
 
 wait_time=0.31s	# time between exist checks 
-guest_login_cmd="LIBGL_ALWAYS_SOFTWARE=1 alacritty --config-file /usr/local/etc/multiseat/login/alacritty.toml -e /usr/local/bin/login.sh"
 default_compositor="labwc"
 
 if [ "$EUID" -ne 0 ]

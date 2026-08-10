@@ -1,1 +1,1 @@
-alacritty --config-file /usr/local/etc/multiseat/login/alacritty.toml -e /usr/local/bin/login.sh
+LIBGL_ALWAYS_SOFTWARE=1 alacritty --config-file /usr/local/etc/multiseat/login/alacritty.toml -e /usr/local/bin/login.sh
